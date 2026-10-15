@@ -16,6 +16,8 @@ import (
 	"github.com/kalbasit/ncps/ent/buildtracesignature"
 	"github.com/kalbasit/ncps/ent/chunk"
 	"github.com/kalbasit/ncps/ent/configentry"
+	"github.com/kalbasit/ncps/ent/fsckrepairbatch"
+	"github.com/kalbasit/ncps/ent/fsckrepairitem"
 	"github.com/kalbasit/ncps/ent/narfile"
 	"github.com/kalbasit/ncps/ent/narfilechunk"
 	"github.com/kalbasit/ncps/ent/narinfo"
@@ -88,6 +90,8 @@ func checkColumn(t, c string) error {
 			buildtracesignature.Table: buildtracesignature.ValidColumn,
 			chunk.Table:               chunk.ValidColumn,
 			configentry.Table:         configentry.ValidColumn,
+			fsckrepairbatch.Table:     fsckrepairbatch.ValidColumn,
+			fsckrepairitem.Table:      fsckrepairitem.ValidColumn,
 			narfile.Table:             narfile.ValidColumn,
 			narfilechunk.Table:        narfilechunk.ValidColumn,
 			narinfo.Table:             narinfo.ValidColumn,

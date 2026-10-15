@@ -38,7 +38,7 @@ fsck runs in three phases:
 
 1. **Phase 1 – Collect suspects**: Runs database queries and walks storage to identify potential issues.
 1. **Phase 2 – Re-verify**: Each suspected issue is individually re-checked to filter out items that were in-flight (being added or removed concurrently). This prevents false positives from in-progress cache operations.
-1. **Phase 3 – Repair** (optional): Re-verifies each item one final time before deleting, then removes all confirmed issues.
+1. **Phase 3 – Repair** (optional): Freezes the re-verified list into a repair batch and executes it item by item (see [Crash-Recoverable Repair Batches](#crash-recoverable-repair-batches)).
 
 The double re-verify design means fsck is safe to run against a live cache without taking it offline.
 
@@ -95,6 +95,16 @@ ncps fsck \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps" \
   --repair
+```
+
+You can bound how long a repair run may take with `--repair-timeout` (env
+`CACHE_FSCK_REPAIR_TIMEOUT`, config `cache.fsck.repair-timeout`). When the
+timeout (or a SIGINT/SIGTERM) fires, fsck finishes the object it is currently
+repairing, records its result, and parks the batch for resume instead of
+leaving partial deletes:
+
+```sh
+ncps fsck ... --repair --repair-timeout=30m
 ```
 
 ### Dry Run
@@ -178,6 +188,7 @@ ncps fsck \
 | --- | --- |
 | `--repair` | Automatically fix all detected issues |
 | `--dry-run` | Show what would be fixed without making any changes |
+| `--repair-timeout` | Stop claiming new repair items after this duration (`30m`, `2h`; `0` = unlimited). The current item still finishes and is recorded; re-run fsck to resume the batch (env `CACHE_FSCK_REPAIR_TIMEOUT`, config `cache.fsck.repair-timeout`) |
 | `--verified-since` | Skip checking NARs verified within this duration (e.g., `24h`, `168h`) |
 | `--verify-content` | _(CDC only)_ Read and hash every chunk's decompressed bytes to detect corruption. Expensive — reads all chunk data from storage. Combine with `--verified-since` to limit scope. |
 | `--cache-temp-path` | Directory the cache uses for temporary files when `--repair` builds a cache (env `CACHE_TEMP_PATH`, config `cache.temp-path`; default: system temp). On hardened deployments with a read-only root filesystem, point this at a writable directory (e.g. a mounted `emptyDir`) — otherwise `--repair` fails its temp-directory writability check before performing any repair. |
@@ -223,7 +234,7 @@ When `--repair` is used (or confirmed interactively), fsck deletes the following
 
 | Issue | Action |
 | --- | --- |
-| Narinfos without nar_files | Delete the narinfo DB record (and its references/signatures via cascade) |
+| Narinfos without nar_files | Recreate the link when a backing `nar_file` exists; otherwise delete the narinfo DB record (and its references/signatures via cascade) |
 | Orphaned nar_files (DB only) | Delete the `nar_file` DB record |
 | Nar_files missing from storage | Delete the `nar_file` DB record; also deletes any narinfo that becomes orphaned as a result (cascade cleanup — no second run needed) |
 | Orphaned NAR files in storage | Delete the physical file from storage |
@@ -235,12 +246,46 @@ When `--repair` is used (or confirmed interactively), fsck deletes the following
 
 > **Note:** Repair does not recover missing data — it removes the inconsistent records. If you need to recover missing NAR files, restore from a backup before running repair.
 
+## Crash-Recoverable Repair Batches
+
+Every repair run freezes the reviewed issue list — object identity, the facts
+discovered during the scan, the expected action, and the precise execution
+phase — into two database tables (`fsck_repair_batches` and
+`fsck_repair_items`) before changing anything.
+
+- **Single executor.** A batch is owned by exactly one `ncps fsck` process.
+  The owner holds a renewable lease and a monotonic fencing token. Starting a
+  second repair while the first is alive fails fast; if the process died, the
+  next `ncps fsck` (without `--dry-run`) adopts the batch once the lease
+  expires (a batch parked as *cancelled* after a signal/timeout is adopted
+  immediately).
+- **No rescan on resume.** Re-running `fsck` after a crash prints
+  `Resuming fsck repair batch …; skipping the scan` and continues the same
+  batch, re-validating every unfinished object against the **current**
+  database, NAR store, chunk store, and the frozen manifest.
+- **Healed objects are skipped.** If an object reappeared or was relinked by a
+  concurrent write, its item is marked `skipped` with the reason recorded; it
+  is never deleted.
+- **Storage first, database second.** For two-sided objects (e.g. orphaned
+  chunks), the storage delete is confirmed before the database row is removed.
+  If the storage delete fails or presence is ambiguous, the row is retained
+  and the item retried as a unit.
+- **Cancel and timeout semantics.** On SIGINT/SIGTERM or `--repair-timeout`,
+  fsck stops claiming new items, lets the current item converge to a recorded
+  result, and parks the batch as `cancelled` with unfinished items intact. A
+  second signal exits immediately.
+- **Result report.** The run ends with a per-category matrix of completed,
+  skipped, failed, retry-pending, and pending objects, plus a sample of the
+  unresolved ones. A normal `fsck` check afterwards confirms final
+  consistency; completed batches remain in the database for 30 days as audit
+  history.
+
 ## Exit Codes
 
 | Exit Code | Meaning |
 | --- | --- |
 | `0` | All checks passed (or repair completed successfully) |
-| Non-zero | Issues were found and either `--dry-run` was used, the prompt was answered with `N`, or an error occurred |
+| Non-zero | Issues were found and either `--dry-run` was used, the prompt was answered with `N`, the repair was interrupted (batch retained for resume), some objects failed/need another retry, or an error occurred |
 
 ## Scheduling Regular Checks
 

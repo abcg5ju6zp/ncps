@@ -18,6 +18,12 @@ type Chunk func(*sql.Selector)
 // ConfigEntry is the predicate function for configentry builders.
 type ConfigEntry func(*sql.Selector)
 
+// FsckRepairBatch is the predicate function for fsckrepairbatch builders.
+type FsckRepairBatch func(*sql.Selector)
+
+// FsckRepairItem is the predicate function for fsckrepairitem builders.
+type FsckRepairItem func(*sql.Selector)
+
 // NarFile is the predicate function for narfile builders.
 type NarFile func(*sql.Selector)
 

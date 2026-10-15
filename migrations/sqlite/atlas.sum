@@ -1,4 +1,4 @@
-h1:ti9XB1DK7TJLTzFtlcdWbSdVjQtkiyg9Rgiwfh/rba8=
+h1:pKtS+S7M8oUxFi5ZqfyhygqeWQVwOt+8JjBnIUAyDZw=
 20241210054814_create-narinfos-table.sql h1:e8MnIArqBCoUNv8/b0yDnx6ikbaSoPuMp3+j+C/cIPk=
 20241210054829_create-nars-table.sql h1:odrcFJuEF0MT6AIEa5Vn8ghpHV7EhIwfOjsIal1ZUW0=
 20241213014846_add-query-to-nars-table.sql h1:gFPvhup77Qua+8KlsWxqRLQqbXSr1IZSnpVDOFlR5cM=
@@ -20,3 +20,4 @@ h1:ti9XB1DK7TJLTzFtlcdWbSdVjQtkiyg9Rgiwfh/rba8=
 20260605211804_add_dechunk_residue_flagged_at_to_nar_files.sql h1:uRfitvFatgcU+YfYwEhV+xmOL3vs7pMx2R2yxf+seaw=
 20260607034027_add_narinfo_upstream_url.sql h1:bAOzHW/bT4jZNfQL0UgahBtyaLnbJuSsdXwHkRLP+QM=
 20260607182925_add_staging_state.sql h1:I8CJvkwgrIXI5uB5kaqfymDhfwK4sFvJht6RFPFn2t4=
+20261014115319_add_fsck_repair_batches.sql h1:n9JEzDcmfTzLG5Vr2kUtymRwaFHGolyk2FqUHZjd5xk=

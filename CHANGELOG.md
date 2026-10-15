@@ -6,6 +6,26 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Crash-recoverable `fsck --repair`.** A repair run now freezes the
+  re-verified issue list into persistent `fsck_repair_batches` /
+  `fsck_repair_items` rows — object identity, scan-time facts, expected
+  action, and precise phase — before changing anything. Each item is
+  completed only after both the database and storage end states are
+  confirmed; storage deletes happen before their database rows, so an
+  ambiguous or failed storage call never claims storage success. A batch is
+  driven by a single executor (lease + monotonic fencing token): concurrent
+  starts back off, and a killed/timed-out/interrupted process leaves an
+  adoptable batch that the next `fsck` continues **without rescanning**,
+  re-validating each unfinished object and skipping objects that healed or
+  were concurrently rewritten (reason recorded). `SIGINT`/`SIGTERM` and the
+  new `--repair-timeout` flag stop new claims, converge the in-flight item,
+  and park the batch as `cancelled`; a second signal exits immediately. The
+  run ends with a completed/skipped/failed/retry-pending matrix and a
+  bounded list of unresolved objects. Dry-run, interactive confirmation,
+  check-only behavior, and the issue classifications are unchanged.
+
 ## [0.10.0] - 2026-10-12
 
 ### Added

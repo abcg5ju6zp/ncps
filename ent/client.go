@@ -19,6 +19,8 @@ import (
 	"github.com/kalbasit/ncps/ent/buildtracesignature"
 	"github.com/kalbasit/ncps/ent/chunk"
 	"github.com/kalbasit/ncps/ent/configentry"
+	"github.com/kalbasit/ncps/ent/fsckrepairbatch"
+	"github.com/kalbasit/ncps/ent/fsckrepairitem"
 	"github.com/kalbasit/ncps/ent/narfile"
 	"github.com/kalbasit/ncps/ent/narfilechunk"
 	"github.com/kalbasit/ncps/ent/narinfo"
@@ -42,6 +44,10 @@ type Client struct {
 	Chunk *ChunkClient
 	// ConfigEntry is the client for interacting with the ConfigEntry builders.
 	ConfigEntry *ConfigEntryClient
+	// FsckRepairBatch is the client for interacting with the FsckRepairBatch builders.
+	FsckRepairBatch *FsckRepairBatchClient
+	// FsckRepairItem is the client for interacting with the FsckRepairItem builders.
+	FsckRepairItem *FsckRepairItemClient
 	// NarFile is the client for interacting with the NarFile builders.
 	NarFile *NarFileClient
 	// NarFileChunk is the client for interacting with the NarFileChunk builders.
@@ -73,6 +79,8 @@ func (c *Client) init() {
 	c.BuildTraceSignature = NewBuildTraceSignatureClient(c.config)
 	c.Chunk = NewChunkClient(c.config)
 	c.ConfigEntry = NewConfigEntryClient(c.config)
+	c.FsckRepairBatch = NewFsckRepairBatchClient(c.config)
+	c.FsckRepairItem = NewFsckRepairItemClient(c.config)
 	c.NarFile = NewNarFileClient(c.config)
 	c.NarFileChunk = NewNarFileChunkClient(c.config)
 	c.NarInfo = NewNarInfoClient(c.config)
@@ -177,6 +185,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		BuildTraceSignature: NewBuildTraceSignatureClient(cfg),
 		Chunk:               NewChunkClient(cfg),
 		ConfigEntry:         NewConfigEntryClient(cfg),
+		FsckRepairBatch:     NewFsckRepairBatchClient(cfg),
+		FsckRepairItem:      NewFsckRepairItemClient(cfg),
 		NarFile:             NewNarFileClient(cfg),
 		NarFileChunk:        NewNarFileChunkClient(cfg),
 		NarInfo:             NewNarInfoClient(cfg),
@@ -208,6 +218,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		BuildTraceSignature: NewBuildTraceSignatureClient(cfg),
 		Chunk:               NewChunkClient(cfg),
 		ConfigEntry:         NewConfigEntryClient(cfg),
+		FsckRepairBatch:     NewFsckRepairBatchClient(cfg),
+		FsckRepairItem:      NewFsckRepairItemClient(cfg),
 		NarFile:             NewNarFileClient(cfg),
 		NarFileChunk:        NewNarFileChunkClient(cfg),
 		NarInfo:             NewNarInfoClient(cfg),
@@ -245,9 +257,10 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.BuildTraceEntry, c.BuildTraceSignature, c.Chunk, c.ConfigEntry, c.NarFile,
-		c.NarFileChunk, c.NarInfo, c.NarInfoNarFile, c.NarInfoReference,
-		c.NarInfoSignature, c.PinnedClosure, c.StagingState,
+		c.BuildTraceEntry, c.BuildTraceSignature, c.Chunk, c.ConfigEntry,
+		c.FsckRepairBatch, c.FsckRepairItem, c.NarFile, c.NarFileChunk, c.NarInfo,
+		c.NarInfoNarFile, c.NarInfoReference, c.NarInfoSignature, c.PinnedClosure,
+		c.StagingState,
 	} {
 		n.Use(hooks...)
 	}
@@ -257,9 +270,10 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.BuildTraceEntry, c.BuildTraceSignature, c.Chunk, c.ConfigEntry, c.NarFile,
-		c.NarFileChunk, c.NarInfo, c.NarInfoNarFile, c.NarInfoReference,
-		c.NarInfoSignature, c.PinnedClosure, c.StagingState,
+		c.BuildTraceEntry, c.BuildTraceSignature, c.Chunk, c.ConfigEntry,
+		c.FsckRepairBatch, c.FsckRepairItem, c.NarFile, c.NarFileChunk, c.NarInfo,
+		c.NarInfoNarFile, c.NarInfoReference, c.NarInfoSignature, c.PinnedClosure,
+		c.StagingState,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -276,6 +290,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Chunk.mutate(ctx, m)
 	case *ConfigEntryMutation:
 		return c.ConfigEntry.mutate(ctx, m)
+	case *FsckRepairBatchMutation:
+		return c.FsckRepairBatch.mutate(ctx, m)
+	case *FsckRepairItemMutation:
+		return c.FsckRepairItem.mutate(ctx, m)
 	case *NarFileMutation:
 		return c.NarFile.mutate(ctx, m)
 	case *NarFileChunkMutation:
@@ -874,6 +892,304 @@ func (c *ConfigEntryClient) mutate(ctx context.Context, m *ConfigEntryMutation) 
 		return (&ConfigEntryDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ConfigEntry mutation op: %q", m.Op())
+	}
+}
+
+// FsckRepairBatchClient is a client for the FsckRepairBatch schema.
+type FsckRepairBatchClient struct {
+	config
+}
+
+// NewFsckRepairBatchClient returns a client for the FsckRepairBatch from the given config.
+func NewFsckRepairBatchClient(c config) *FsckRepairBatchClient {
+	return &FsckRepairBatchClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `fsckrepairbatch.Hooks(f(g(h())))`.
+func (c *FsckRepairBatchClient) Use(hooks ...Hook) {
+	c.hooks.FsckRepairBatch = append(c.hooks.FsckRepairBatch, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `fsckrepairbatch.Intercept(f(g(h())))`.
+func (c *FsckRepairBatchClient) Intercept(interceptors ...Interceptor) {
+	c.inters.FsckRepairBatch = append(c.inters.FsckRepairBatch, interceptors...)
+}
+
+// Create returns a builder for creating a FsckRepairBatch entity.
+func (c *FsckRepairBatchClient) Create() *FsckRepairBatchCreate {
+	mutation := newFsckRepairBatchMutation(c.config, OpCreate)
+	return &FsckRepairBatchCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of FsckRepairBatch entities.
+func (c *FsckRepairBatchClient) CreateBulk(builders ...*FsckRepairBatchCreate) *FsckRepairBatchCreateBulk {
+	return &FsckRepairBatchCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *FsckRepairBatchClient) MapCreateBulk(slice any, setFunc func(*FsckRepairBatchCreate, int)) *FsckRepairBatchCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &FsckRepairBatchCreateBulk{err: fmt.Errorf("calling to FsckRepairBatchClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*FsckRepairBatchCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &FsckRepairBatchCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for FsckRepairBatch.
+func (c *FsckRepairBatchClient) Update() *FsckRepairBatchUpdate {
+	mutation := newFsckRepairBatchMutation(c.config, OpUpdate)
+	return &FsckRepairBatchUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *FsckRepairBatchClient) UpdateOne(_m *FsckRepairBatch) *FsckRepairBatchUpdateOne {
+	mutation := newFsckRepairBatchMutation(c.config, OpUpdateOne, withFsckRepairBatch(_m))
+	return &FsckRepairBatchUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *FsckRepairBatchClient) UpdateOneID(id int) *FsckRepairBatchUpdateOne {
+	mutation := newFsckRepairBatchMutation(c.config, OpUpdateOne, withFsckRepairBatchID(id))
+	return &FsckRepairBatchUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for FsckRepairBatch.
+func (c *FsckRepairBatchClient) Delete() *FsckRepairBatchDelete {
+	mutation := newFsckRepairBatchMutation(c.config, OpDelete)
+	return &FsckRepairBatchDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *FsckRepairBatchClient) DeleteOne(_m *FsckRepairBatch) *FsckRepairBatchDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *FsckRepairBatchClient) DeleteOneID(id int) *FsckRepairBatchDeleteOne {
+	builder := c.Delete().Where(fsckrepairbatch.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &FsckRepairBatchDeleteOne{builder}
+}
+
+// Query returns a query builder for FsckRepairBatch.
+func (c *FsckRepairBatchClient) Query() *FsckRepairBatchQuery {
+	return &FsckRepairBatchQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeFsckRepairBatch},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a FsckRepairBatch entity by its id.
+func (c *FsckRepairBatchClient) Get(ctx context.Context, id int) (*FsckRepairBatch, error) {
+	return c.Query().Where(fsckrepairbatch.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *FsckRepairBatchClient) GetX(ctx context.Context, id int) *FsckRepairBatch {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryItems queries the items edge of a FsckRepairBatch.
+func (c *FsckRepairBatchClient) QueryItems(_m *FsckRepairBatch) *FsckRepairItemQuery {
+	query := (&FsckRepairItemClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(fsckrepairbatch.Table, fsckrepairbatch.FieldID, id),
+			sqlgraph.To(fsckrepairitem.Table, fsckrepairitem.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, fsckrepairbatch.ItemsTable, fsckrepairbatch.ItemsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *FsckRepairBatchClient) Hooks() []Hook {
+	return c.hooks.FsckRepairBatch
+}
+
+// Interceptors returns the client interceptors.
+func (c *FsckRepairBatchClient) Interceptors() []Interceptor {
+	return c.inters.FsckRepairBatch
+}
+
+func (c *FsckRepairBatchClient) mutate(ctx context.Context, m *FsckRepairBatchMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&FsckRepairBatchCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&FsckRepairBatchUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&FsckRepairBatchUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&FsckRepairBatchDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown FsckRepairBatch mutation op: %q", m.Op())
+	}
+}
+
+// FsckRepairItemClient is a client for the FsckRepairItem schema.
+type FsckRepairItemClient struct {
+	config
+}
+
+// NewFsckRepairItemClient returns a client for the FsckRepairItem from the given config.
+func NewFsckRepairItemClient(c config) *FsckRepairItemClient {
+	return &FsckRepairItemClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `fsckrepairitem.Hooks(f(g(h())))`.
+func (c *FsckRepairItemClient) Use(hooks ...Hook) {
+	c.hooks.FsckRepairItem = append(c.hooks.FsckRepairItem, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `fsckrepairitem.Intercept(f(g(h())))`.
+func (c *FsckRepairItemClient) Intercept(interceptors ...Interceptor) {
+	c.inters.FsckRepairItem = append(c.inters.FsckRepairItem, interceptors...)
+}
+
+// Create returns a builder for creating a FsckRepairItem entity.
+func (c *FsckRepairItemClient) Create() *FsckRepairItemCreate {
+	mutation := newFsckRepairItemMutation(c.config, OpCreate)
+	return &FsckRepairItemCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of FsckRepairItem entities.
+func (c *FsckRepairItemClient) CreateBulk(builders ...*FsckRepairItemCreate) *FsckRepairItemCreateBulk {
+	return &FsckRepairItemCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *FsckRepairItemClient) MapCreateBulk(slice any, setFunc func(*FsckRepairItemCreate, int)) *FsckRepairItemCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &FsckRepairItemCreateBulk{err: fmt.Errorf("calling to FsckRepairItemClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*FsckRepairItemCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &FsckRepairItemCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for FsckRepairItem.
+func (c *FsckRepairItemClient) Update() *FsckRepairItemUpdate {
+	mutation := newFsckRepairItemMutation(c.config, OpUpdate)
+	return &FsckRepairItemUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *FsckRepairItemClient) UpdateOne(_m *FsckRepairItem) *FsckRepairItemUpdateOne {
+	mutation := newFsckRepairItemMutation(c.config, OpUpdateOne, withFsckRepairItem(_m))
+	return &FsckRepairItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *FsckRepairItemClient) UpdateOneID(id int) *FsckRepairItemUpdateOne {
+	mutation := newFsckRepairItemMutation(c.config, OpUpdateOne, withFsckRepairItemID(id))
+	return &FsckRepairItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for FsckRepairItem.
+func (c *FsckRepairItemClient) Delete() *FsckRepairItemDelete {
+	mutation := newFsckRepairItemMutation(c.config, OpDelete)
+	return &FsckRepairItemDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *FsckRepairItemClient) DeleteOne(_m *FsckRepairItem) *FsckRepairItemDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *FsckRepairItemClient) DeleteOneID(id int) *FsckRepairItemDeleteOne {
+	builder := c.Delete().Where(fsckrepairitem.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &FsckRepairItemDeleteOne{builder}
+}
+
+// Query returns a query builder for FsckRepairItem.
+func (c *FsckRepairItemClient) Query() *FsckRepairItemQuery {
+	return &FsckRepairItemQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeFsckRepairItem},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a FsckRepairItem entity by its id.
+func (c *FsckRepairItemClient) Get(ctx context.Context, id int) (*FsckRepairItem, error) {
+	return c.Query().Where(fsckrepairitem.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *FsckRepairItemClient) GetX(ctx context.Context, id int) *FsckRepairItem {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryBatch queries the batch edge of a FsckRepairItem.
+func (c *FsckRepairItemClient) QueryBatch(_m *FsckRepairItem) *FsckRepairBatchQuery {
+	query := (&FsckRepairBatchClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(fsckrepairitem.Table, fsckrepairitem.FieldID, id),
+			sqlgraph.To(fsckrepairbatch.Table, fsckrepairbatch.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, fsckrepairitem.BatchTable, fsckrepairitem.BatchColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *FsckRepairItemClient) Hooks() []Hook {
+	return c.hooks.FsckRepairItem
+}
+
+// Interceptors returns the client interceptors.
+func (c *FsckRepairItemClient) Interceptors() []Interceptor {
+	return c.inters.FsckRepairItem
+}
+
+func (c *FsckRepairItemClient) mutate(ctx context.Context, m *FsckRepairItemMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&FsckRepairItemCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&FsckRepairItemUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&FsckRepairItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&FsckRepairItemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown FsckRepairItem mutation op: %q", m.Op())
 	}
 }
 
@@ -2120,13 +2436,14 @@ func (c *StagingStateClient) mutate(ctx context.Context, m *StagingStateMutation
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		BuildTraceEntry, BuildTraceSignature, Chunk, ConfigEntry, NarFile, NarFileChunk,
-		NarInfo, NarInfoNarFile, NarInfoReference, NarInfoSignature, PinnedClosure,
-		StagingState []ent.Hook
+		BuildTraceEntry, BuildTraceSignature, Chunk, ConfigEntry, FsckRepairBatch,
+		FsckRepairItem, NarFile, NarFileChunk, NarInfo, NarInfoNarFile,
+		NarInfoReference, NarInfoSignature, PinnedClosure, StagingState []ent.Hook
 	}
 	inters struct {
-		BuildTraceEntry, BuildTraceSignature, Chunk, ConfigEntry, NarFile, NarFileChunk,
-		NarInfo, NarInfoNarFile, NarInfoReference, NarInfoSignature, PinnedClosure,
+		BuildTraceEntry, BuildTraceSignature, Chunk, ConfigEntry, FsckRepairBatch,
+		FsckRepairItem, NarFile, NarFileChunk, NarInfo, NarInfoNarFile,
+		NarInfoReference, NarInfoSignature, PinnedClosure,
 		StagingState []ent.Interceptor
 	}
 )

@@ -20,6 +20,10 @@ type Tx struct {
 	Chunk *ChunkClient
 	// ConfigEntry is the client for interacting with the ConfigEntry builders.
 	ConfigEntry *ConfigEntryClient
+	// FsckRepairBatch is the client for interacting with the FsckRepairBatch builders.
+	FsckRepairBatch *FsckRepairBatchClient
+	// FsckRepairItem is the client for interacting with the FsckRepairItem builders.
+	FsckRepairItem *FsckRepairItemClient
 	// NarFile is the client for interacting with the NarFile builders.
 	NarFile *NarFileClient
 	// NarFileChunk is the client for interacting with the NarFileChunk builders.
@@ -171,6 +175,8 @@ func (tx *Tx) init() {
 	tx.BuildTraceSignature = NewBuildTraceSignatureClient(tx.config)
 	tx.Chunk = NewChunkClient(tx.config)
 	tx.ConfigEntry = NewConfigEntryClient(tx.config)
+	tx.FsckRepairBatch = NewFsckRepairBatchClient(tx.config)
+	tx.FsckRepairItem = NewFsckRepairItemClient(tx.config)
 	tx.NarFile = NewNarFileClient(tx.config)
 	tx.NarFileChunk = NewNarFileChunkClient(tx.config)
 	tx.NarInfo = NewNarInfoClient(tx.config)

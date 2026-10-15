@@ -57,6 +57,30 @@ func (f ConfigEntryFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ConfigEntryMutation", m)
 }
 
+// The FsckRepairBatchFunc type is an adapter to allow the use of ordinary
+// function as FsckRepairBatch mutator.
+type FsckRepairBatchFunc func(context.Context, *ent.FsckRepairBatchMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f FsckRepairBatchFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.FsckRepairBatchMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.FsckRepairBatchMutation", m)
+}
+
+// The FsckRepairItemFunc type is an adapter to allow the use of ordinary
+// function as FsckRepairItem mutator.
+type FsckRepairItemFunc func(context.Context, *ent.FsckRepairItemMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f FsckRepairItemFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.FsckRepairItemMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.FsckRepairItemMutation", m)
+}
+
 // The NarFileFunc type is an adapter to allow the use of ordinary
 // function as NarFile mutator.
 type NarFileFunc func(context.Context, *ent.NarFileMutation) (ent.Value, error)

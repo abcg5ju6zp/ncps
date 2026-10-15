@@ -15,6 +15,8 @@ import (
 	"github.com/kalbasit/ncps/ent/buildtracesignature"
 	"github.com/kalbasit/ncps/ent/chunk"
 	"github.com/kalbasit/ncps/ent/configentry"
+	"github.com/kalbasit/ncps/ent/fsckrepairbatch"
+	"github.com/kalbasit/ncps/ent/fsckrepairitem"
 	"github.com/kalbasit/ncps/ent/narfile"
 	"github.com/kalbasit/ncps/ent/narfilechunk"
 	"github.com/kalbasit/ncps/ent/narinfo"
@@ -39,6 +41,8 @@ const (
 	TypeBuildTraceSignature = "BuildTraceSignature"
 	TypeChunk               = "Chunk"
 	TypeConfigEntry         = "ConfigEntry"
+	TypeFsckRepairBatch     = "FsckRepairBatch"
+	TypeFsckRepairItem      = "FsckRepairItem"
 	TypeNarFile             = "NarFile"
 	TypeNarFileChunk        = "NarFileChunk"
 	TypeNarInfo             = "NarInfo"
@@ -2485,6 +2489,2959 @@ func (m *ConfigEntryMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ConfigEntryMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ConfigEntry edge %s", name)
+}
+
+// FsckRepairBatchMutation represents an operation that mutates the FsckRepairBatch nodes in the graph.
+type FsckRepairBatchMutation struct {
+	config
+	op               Op
+	typ              string
+	id               *int
+	created_at       *time.Time
+	updated_at       *time.Time
+	uid              *string
+	status           *string
+	active_slot      *int
+	addactive_slot   *int
+	consent          *string
+	cdc_mode         *bool
+	verify_content   *bool
+	executor_id      *string
+	executor_name    *string
+	fence_token      *int
+	addfence_token   *int
+	lease_expires_at *time.Time
+	started_at       *time.Time
+	finished_at      *time.Time
+	summary          *string
+	clearedFields    map[string]struct{}
+	items            map[int]struct{}
+	removeditems     map[int]struct{}
+	cleareditems     bool
+	done             bool
+	oldValue         func(context.Context) (*FsckRepairBatch, error)
+	predicates       []predicate.FsckRepairBatch
+}
+
+var _ ent.Mutation = (*FsckRepairBatchMutation)(nil)
+
+// fsckrepairbatchOption allows management of the mutation configuration using functional options.
+type fsckrepairbatchOption func(*FsckRepairBatchMutation)
+
+// newFsckRepairBatchMutation creates new mutation for the FsckRepairBatch entity.
+func newFsckRepairBatchMutation(c config, op Op, opts ...fsckrepairbatchOption) *FsckRepairBatchMutation {
+	m := &FsckRepairBatchMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeFsckRepairBatch,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withFsckRepairBatchID sets the ID field of the mutation.
+func withFsckRepairBatchID(id int) fsckrepairbatchOption {
+	return func(m *FsckRepairBatchMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *FsckRepairBatch
+		)
+		m.oldValue = func(ctx context.Context) (*FsckRepairBatch, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().FsckRepairBatch.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withFsckRepairBatch sets the old FsckRepairBatch of the mutation.
+func withFsckRepairBatch(node *FsckRepairBatch) fsckrepairbatchOption {
+	return func(m *FsckRepairBatchMutation) {
+		m.oldValue = func(context.Context) (*FsckRepairBatch, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m FsckRepairBatchMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m FsckRepairBatchMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *FsckRepairBatchMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *FsckRepairBatchMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().FsckRepairBatch.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *FsckRepairBatchMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *FsckRepairBatchMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *FsckRepairBatchMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *FsckRepairBatchMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *FsckRepairBatchMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldUpdatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (m *FsckRepairBatchMutation) ClearUpdatedAt() {
+	m.updated_at = nil
+	m.clearedFields[fsckrepairbatch.FieldUpdatedAt] = struct{}{}
+}
+
+// UpdatedAtCleared returns if the "updated_at" field was cleared in this mutation.
+func (m *FsckRepairBatchMutation) UpdatedAtCleared() bool {
+	_, ok := m.clearedFields[fsckrepairbatch.FieldUpdatedAt]
+	return ok
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *FsckRepairBatchMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+	delete(m.clearedFields, fsckrepairbatch.FieldUpdatedAt)
+}
+
+// SetUID sets the "uid" field.
+func (m *FsckRepairBatchMutation) SetUID(s string) {
+	m.uid = &s
+}
+
+// UID returns the value of the "uid" field in the mutation.
+func (m *FsckRepairBatchMutation) UID() (r string, exists bool) {
+	v := m.uid
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUID returns the old "uid" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldUID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUID: %w", err)
+	}
+	return oldValue.UID, nil
+}
+
+// ResetUID resets all changes to the "uid" field.
+func (m *FsckRepairBatchMutation) ResetUID() {
+	m.uid = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *FsckRepairBatchMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *FsckRepairBatchMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *FsckRepairBatchMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetActiveSlot sets the "active_slot" field.
+func (m *FsckRepairBatchMutation) SetActiveSlot(i int) {
+	m.active_slot = &i
+	m.addactive_slot = nil
+}
+
+// ActiveSlot returns the value of the "active_slot" field in the mutation.
+func (m *FsckRepairBatchMutation) ActiveSlot() (r int, exists bool) {
+	v := m.active_slot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActiveSlot returns the old "active_slot" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldActiveSlot(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActiveSlot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActiveSlot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActiveSlot: %w", err)
+	}
+	return oldValue.ActiveSlot, nil
+}
+
+// AddActiveSlot adds i to the "active_slot" field.
+func (m *FsckRepairBatchMutation) AddActiveSlot(i int) {
+	if m.addactive_slot != nil {
+		*m.addactive_slot += i
+	} else {
+		m.addactive_slot = &i
+	}
+}
+
+// AddedActiveSlot returns the value that was added to the "active_slot" field in this mutation.
+func (m *FsckRepairBatchMutation) AddedActiveSlot() (r int, exists bool) {
+	v := m.addactive_slot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearActiveSlot clears the value of the "active_slot" field.
+func (m *FsckRepairBatchMutation) ClearActiveSlot() {
+	m.active_slot = nil
+	m.addactive_slot = nil
+	m.clearedFields[fsckrepairbatch.FieldActiveSlot] = struct{}{}
+}
+
+// ActiveSlotCleared returns if the "active_slot" field was cleared in this mutation.
+func (m *FsckRepairBatchMutation) ActiveSlotCleared() bool {
+	_, ok := m.clearedFields[fsckrepairbatch.FieldActiveSlot]
+	return ok
+}
+
+// ResetActiveSlot resets all changes to the "active_slot" field.
+func (m *FsckRepairBatchMutation) ResetActiveSlot() {
+	m.active_slot = nil
+	m.addactive_slot = nil
+	delete(m.clearedFields, fsckrepairbatch.FieldActiveSlot)
+}
+
+// SetConsent sets the "consent" field.
+func (m *FsckRepairBatchMutation) SetConsent(s string) {
+	m.consent = &s
+}
+
+// Consent returns the value of the "consent" field in the mutation.
+func (m *FsckRepairBatchMutation) Consent() (r string, exists bool) {
+	v := m.consent
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConsent returns the old "consent" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldConsent(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConsent is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConsent requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConsent: %w", err)
+	}
+	return oldValue.Consent, nil
+}
+
+// ResetConsent resets all changes to the "consent" field.
+func (m *FsckRepairBatchMutation) ResetConsent() {
+	m.consent = nil
+}
+
+// SetCdcMode sets the "cdc_mode" field.
+func (m *FsckRepairBatchMutation) SetCdcMode(b bool) {
+	m.cdc_mode = &b
+}
+
+// CdcMode returns the value of the "cdc_mode" field in the mutation.
+func (m *FsckRepairBatchMutation) CdcMode() (r bool, exists bool) {
+	v := m.cdc_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCdcMode returns the old "cdc_mode" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldCdcMode(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCdcMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCdcMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCdcMode: %w", err)
+	}
+	return oldValue.CdcMode, nil
+}
+
+// ResetCdcMode resets all changes to the "cdc_mode" field.
+func (m *FsckRepairBatchMutation) ResetCdcMode() {
+	m.cdc_mode = nil
+}
+
+// SetVerifyContent sets the "verify_content" field.
+func (m *FsckRepairBatchMutation) SetVerifyContent(b bool) {
+	m.verify_content = &b
+}
+
+// VerifyContent returns the value of the "verify_content" field in the mutation.
+func (m *FsckRepairBatchMutation) VerifyContent() (r bool, exists bool) {
+	v := m.verify_content
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVerifyContent returns the old "verify_content" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldVerifyContent(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVerifyContent is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVerifyContent requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVerifyContent: %w", err)
+	}
+	return oldValue.VerifyContent, nil
+}
+
+// ResetVerifyContent resets all changes to the "verify_content" field.
+func (m *FsckRepairBatchMutation) ResetVerifyContent() {
+	m.verify_content = nil
+}
+
+// SetExecutorID sets the "executor_id" field.
+func (m *FsckRepairBatchMutation) SetExecutorID(s string) {
+	m.executor_id = &s
+}
+
+// ExecutorID returns the value of the "executor_id" field in the mutation.
+func (m *FsckRepairBatchMutation) ExecutorID() (r string, exists bool) {
+	v := m.executor_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExecutorID returns the old "executor_id" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldExecutorID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExecutorID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExecutorID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExecutorID: %w", err)
+	}
+	return oldValue.ExecutorID, nil
+}
+
+// ResetExecutorID resets all changes to the "executor_id" field.
+func (m *FsckRepairBatchMutation) ResetExecutorID() {
+	m.executor_id = nil
+}
+
+// SetExecutorName sets the "executor_name" field.
+func (m *FsckRepairBatchMutation) SetExecutorName(s string) {
+	m.executor_name = &s
+}
+
+// ExecutorName returns the value of the "executor_name" field in the mutation.
+func (m *FsckRepairBatchMutation) ExecutorName() (r string, exists bool) {
+	v := m.executor_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExecutorName returns the old "executor_name" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldExecutorName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExecutorName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExecutorName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExecutorName: %w", err)
+	}
+	return oldValue.ExecutorName, nil
+}
+
+// ResetExecutorName resets all changes to the "executor_name" field.
+func (m *FsckRepairBatchMutation) ResetExecutorName() {
+	m.executor_name = nil
+}
+
+// SetFenceToken sets the "fence_token" field.
+func (m *FsckRepairBatchMutation) SetFenceToken(i int) {
+	m.fence_token = &i
+	m.addfence_token = nil
+}
+
+// FenceToken returns the value of the "fence_token" field in the mutation.
+func (m *FsckRepairBatchMutation) FenceToken() (r int, exists bool) {
+	v := m.fence_token
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFenceToken returns the old "fence_token" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldFenceToken(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFenceToken is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFenceToken requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFenceToken: %w", err)
+	}
+	return oldValue.FenceToken, nil
+}
+
+// AddFenceToken adds i to the "fence_token" field.
+func (m *FsckRepairBatchMutation) AddFenceToken(i int) {
+	if m.addfence_token != nil {
+		*m.addfence_token += i
+	} else {
+		m.addfence_token = &i
+	}
+}
+
+// AddedFenceToken returns the value that was added to the "fence_token" field in this mutation.
+func (m *FsckRepairBatchMutation) AddedFenceToken() (r int, exists bool) {
+	v := m.addfence_token
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFenceToken resets all changes to the "fence_token" field.
+func (m *FsckRepairBatchMutation) ResetFenceToken() {
+	m.fence_token = nil
+	m.addfence_token = nil
+}
+
+// SetLeaseExpiresAt sets the "lease_expires_at" field.
+func (m *FsckRepairBatchMutation) SetLeaseExpiresAt(t time.Time) {
+	m.lease_expires_at = &t
+}
+
+// LeaseExpiresAt returns the value of the "lease_expires_at" field in the mutation.
+func (m *FsckRepairBatchMutation) LeaseExpiresAt() (r time.Time, exists bool) {
+	v := m.lease_expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLeaseExpiresAt returns the old "lease_expires_at" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldLeaseExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLeaseExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLeaseExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLeaseExpiresAt: %w", err)
+	}
+	return oldValue.LeaseExpiresAt, nil
+}
+
+// ClearLeaseExpiresAt clears the value of the "lease_expires_at" field.
+func (m *FsckRepairBatchMutation) ClearLeaseExpiresAt() {
+	m.lease_expires_at = nil
+	m.clearedFields[fsckrepairbatch.FieldLeaseExpiresAt] = struct{}{}
+}
+
+// LeaseExpiresAtCleared returns if the "lease_expires_at" field was cleared in this mutation.
+func (m *FsckRepairBatchMutation) LeaseExpiresAtCleared() bool {
+	_, ok := m.clearedFields[fsckrepairbatch.FieldLeaseExpiresAt]
+	return ok
+}
+
+// ResetLeaseExpiresAt resets all changes to the "lease_expires_at" field.
+func (m *FsckRepairBatchMutation) ResetLeaseExpiresAt() {
+	m.lease_expires_at = nil
+	delete(m.clearedFields, fsckrepairbatch.FieldLeaseExpiresAt)
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *FsckRepairBatchMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *FsckRepairBatchMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (m *FsckRepairBatchMutation) ClearStartedAt() {
+	m.started_at = nil
+	m.clearedFields[fsckrepairbatch.FieldStartedAt] = struct{}{}
+}
+
+// StartedAtCleared returns if the "started_at" field was cleared in this mutation.
+func (m *FsckRepairBatchMutation) StartedAtCleared() bool {
+	_, ok := m.clearedFields[fsckrepairbatch.FieldStartedAt]
+	return ok
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *FsckRepairBatchMutation) ResetStartedAt() {
+	m.started_at = nil
+	delete(m.clearedFields, fsckrepairbatch.FieldStartedAt)
+}
+
+// SetFinishedAt sets the "finished_at" field.
+func (m *FsckRepairBatchMutation) SetFinishedAt(t time.Time) {
+	m.finished_at = &t
+}
+
+// FinishedAt returns the value of the "finished_at" field in the mutation.
+func (m *FsckRepairBatchMutation) FinishedAt() (r time.Time, exists bool) {
+	v := m.finished_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinishedAt returns the old "finished_at" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldFinishedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinishedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinishedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinishedAt: %w", err)
+	}
+	return oldValue.FinishedAt, nil
+}
+
+// ClearFinishedAt clears the value of the "finished_at" field.
+func (m *FsckRepairBatchMutation) ClearFinishedAt() {
+	m.finished_at = nil
+	m.clearedFields[fsckrepairbatch.FieldFinishedAt] = struct{}{}
+}
+
+// FinishedAtCleared returns if the "finished_at" field was cleared in this mutation.
+func (m *FsckRepairBatchMutation) FinishedAtCleared() bool {
+	_, ok := m.clearedFields[fsckrepairbatch.FieldFinishedAt]
+	return ok
+}
+
+// ResetFinishedAt resets all changes to the "finished_at" field.
+func (m *FsckRepairBatchMutation) ResetFinishedAt() {
+	m.finished_at = nil
+	delete(m.clearedFields, fsckrepairbatch.FieldFinishedAt)
+}
+
+// SetSummary sets the "summary" field.
+func (m *FsckRepairBatchMutation) SetSummary(s string) {
+	m.summary = &s
+}
+
+// Summary returns the value of the "summary" field in the mutation.
+func (m *FsckRepairBatchMutation) Summary() (r string, exists bool) {
+	v := m.summary
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSummary returns the old "summary" field's value of the FsckRepairBatch entity.
+// If the FsckRepairBatch object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairBatchMutation) OldSummary(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSummary is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSummary requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSummary: %w", err)
+	}
+	return oldValue.Summary, nil
+}
+
+// ClearSummary clears the value of the "summary" field.
+func (m *FsckRepairBatchMutation) ClearSummary() {
+	m.summary = nil
+	m.clearedFields[fsckrepairbatch.FieldSummary] = struct{}{}
+}
+
+// SummaryCleared returns if the "summary" field was cleared in this mutation.
+func (m *FsckRepairBatchMutation) SummaryCleared() bool {
+	_, ok := m.clearedFields[fsckrepairbatch.FieldSummary]
+	return ok
+}
+
+// ResetSummary resets all changes to the "summary" field.
+func (m *FsckRepairBatchMutation) ResetSummary() {
+	m.summary = nil
+	delete(m.clearedFields, fsckrepairbatch.FieldSummary)
+}
+
+// AddItemIDs adds the "items" edge to the FsckRepairItem entity by ids.
+func (m *FsckRepairBatchMutation) AddItemIDs(ids ...int) {
+	if m.items == nil {
+		m.items = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.items[ids[i]] = struct{}{}
+	}
+}
+
+// ClearItems clears the "items" edge to the FsckRepairItem entity.
+func (m *FsckRepairBatchMutation) ClearItems() {
+	m.cleareditems = true
+}
+
+// ItemsCleared reports if the "items" edge to the FsckRepairItem entity was cleared.
+func (m *FsckRepairBatchMutation) ItemsCleared() bool {
+	return m.cleareditems
+}
+
+// RemoveItemIDs removes the "items" edge to the FsckRepairItem entity by IDs.
+func (m *FsckRepairBatchMutation) RemoveItemIDs(ids ...int) {
+	if m.removeditems == nil {
+		m.removeditems = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.items, ids[i])
+		m.removeditems[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedItems returns the removed IDs of the "items" edge to the FsckRepairItem entity.
+func (m *FsckRepairBatchMutation) RemovedItemsIDs() (ids []int) {
+	for id := range m.removeditems {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ItemsIDs returns the "items" edge IDs in the mutation.
+func (m *FsckRepairBatchMutation) ItemsIDs() (ids []int) {
+	for id := range m.items {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetItems resets all changes to the "items" edge.
+func (m *FsckRepairBatchMutation) ResetItems() {
+	m.items = nil
+	m.cleareditems = false
+	m.removeditems = nil
+}
+
+// Where appends a list predicates to the FsckRepairBatchMutation builder.
+func (m *FsckRepairBatchMutation) Where(ps ...predicate.FsckRepairBatch) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the FsckRepairBatchMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *FsckRepairBatchMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.FsckRepairBatch, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *FsckRepairBatchMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *FsckRepairBatchMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (FsckRepairBatch).
+func (m *FsckRepairBatchMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *FsckRepairBatchMutation) Fields() []string {
+	fields := make([]string, 0, 15)
+	if m.created_at != nil {
+		fields = append(fields, fsckrepairbatch.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, fsckrepairbatch.FieldUpdatedAt)
+	}
+	if m.uid != nil {
+		fields = append(fields, fsckrepairbatch.FieldUID)
+	}
+	if m.status != nil {
+		fields = append(fields, fsckrepairbatch.FieldStatus)
+	}
+	if m.active_slot != nil {
+		fields = append(fields, fsckrepairbatch.FieldActiveSlot)
+	}
+	if m.consent != nil {
+		fields = append(fields, fsckrepairbatch.FieldConsent)
+	}
+	if m.cdc_mode != nil {
+		fields = append(fields, fsckrepairbatch.FieldCdcMode)
+	}
+	if m.verify_content != nil {
+		fields = append(fields, fsckrepairbatch.FieldVerifyContent)
+	}
+	if m.executor_id != nil {
+		fields = append(fields, fsckrepairbatch.FieldExecutorID)
+	}
+	if m.executor_name != nil {
+		fields = append(fields, fsckrepairbatch.FieldExecutorName)
+	}
+	if m.fence_token != nil {
+		fields = append(fields, fsckrepairbatch.FieldFenceToken)
+	}
+	if m.lease_expires_at != nil {
+		fields = append(fields, fsckrepairbatch.FieldLeaseExpiresAt)
+	}
+	if m.started_at != nil {
+		fields = append(fields, fsckrepairbatch.FieldStartedAt)
+	}
+	if m.finished_at != nil {
+		fields = append(fields, fsckrepairbatch.FieldFinishedAt)
+	}
+	if m.summary != nil {
+		fields = append(fields, fsckrepairbatch.FieldSummary)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *FsckRepairBatchMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case fsckrepairbatch.FieldCreatedAt:
+		return m.CreatedAt()
+	case fsckrepairbatch.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case fsckrepairbatch.FieldUID:
+		return m.UID()
+	case fsckrepairbatch.FieldStatus:
+		return m.Status()
+	case fsckrepairbatch.FieldActiveSlot:
+		return m.ActiveSlot()
+	case fsckrepairbatch.FieldConsent:
+		return m.Consent()
+	case fsckrepairbatch.FieldCdcMode:
+		return m.CdcMode()
+	case fsckrepairbatch.FieldVerifyContent:
+		return m.VerifyContent()
+	case fsckrepairbatch.FieldExecutorID:
+		return m.ExecutorID()
+	case fsckrepairbatch.FieldExecutorName:
+		return m.ExecutorName()
+	case fsckrepairbatch.FieldFenceToken:
+		return m.FenceToken()
+	case fsckrepairbatch.FieldLeaseExpiresAt:
+		return m.LeaseExpiresAt()
+	case fsckrepairbatch.FieldStartedAt:
+		return m.StartedAt()
+	case fsckrepairbatch.FieldFinishedAt:
+		return m.FinishedAt()
+	case fsckrepairbatch.FieldSummary:
+		return m.Summary()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *FsckRepairBatchMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case fsckrepairbatch.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case fsckrepairbatch.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case fsckrepairbatch.FieldUID:
+		return m.OldUID(ctx)
+	case fsckrepairbatch.FieldStatus:
+		return m.OldStatus(ctx)
+	case fsckrepairbatch.FieldActiveSlot:
+		return m.OldActiveSlot(ctx)
+	case fsckrepairbatch.FieldConsent:
+		return m.OldConsent(ctx)
+	case fsckrepairbatch.FieldCdcMode:
+		return m.OldCdcMode(ctx)
+	case fsckrepairbatch.FieldVerifyContent:
+		return m.OldVerifyContent(ctx)
+	case fsckrepairbatch.FieldExecutorID:
+		return m.OldExecutorID(ctx)
+	case fsckrepairbatch.FieldExecutorName:
+		return m.OldExecutorName(ctx)
+	case fsckrepairbatch.FieldFenceToken:
+		return m.OldFenceToken(ctx)
+	case fsckrepairbatch.FieldLeaseExpiresAt:
+		return m.OldLeaseExpiresAt(ctx)
+	case fsckrepairbatch.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case fsckrepairbatch.FieldFinishedAt:
+		return m.OldFinishedAt(ctx)
+	case fsckrepairbatch.FieldSummary:
+		return m.OldSummary(ctx)
+	}
+	return nil, fmt.Errorf("unknown FsckRepairBatch field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *FsckRepairBatchMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case fsckrepairbatch.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case fsckrepairbatch.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case fsckrepairbatch.FieldUID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUID(v)
+		return nil
+	case fsckrepairbatch.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case fsckrepairbatch.FieldActiveSlot:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActiveSlot(v)
+		return nil
+	case fsckrepairbatch.FieldConsent:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConsent(v)
+		return nil
+	case fsckrepairbatch.FieldCdcMode:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCdcMode(v)
+		return nil
+	case fsckrepairbatch.FieldVerifyContent:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVerifyContent(v)
+		return nil
+	case fsckrepairbatch.FieldExecutorID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExecutorID(v)
+		return nil
+	case fsckrepairbatch.FieldExecutorName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExecutorName(v)
+		return nil
+	case fsckrepairbatch.FieldFenceToken:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFenceToken(v)
+		return nil
+	case fsckrepairbatch.FieldLeaseExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLeaseExpiresAt(v)
+		return nil
+	case fsckrepairbatch.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case fsckrepairbatch.FieldFinishedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinishedAt(v)
+		return nil
+	case fsckrepairbatch.FieldSummary:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSummary(v)
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairBatch field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *FsckRepairBatchMutation) AddedFields() []string {
+	var fields []string
+	if m.addactive_slot != nil {
+		fields = append(fields, fsckrepairbatch.FieldActiveSlot)
+	}
+	if m.addfence_token != nil {
+		fields = append(fields, fsckrepairbatch.FieldFenceToken)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *FsckRepairBatchMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case fsckrepairbatch.FieldActiveSlot:
+		return m.AddedActiveSlot()
+	case fsckrepairbatch.FieldFenceToken:
+		return m.AddedFenceToken()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *FsckRepairBatchMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case fsckrepairbatch.FieldActiveSlot:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddActiveSlot(v)
+		return nil
+	case fsckrepairbatch.FieldFenceToken:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFenceToken(v)
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairBatch numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *FsckRepairBatchMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(fsckrepairbatch.FieldUpdatedAt) {
+		fields = append(fields, fsckrepairbatch.FieldUpdatedAt)
+	}
+	if m.FieldCleared(fsckrepairbatch.FieldActiveSlot) {
+		fields = append(fields, fsckrepairbatch.FieldActiveSlot)
+	}
+	if m.FieldCleared(fsckrepairbatch.FieldLeaseExpiresAt) {
+		fields = append(fields, fsckrepairbatch.FieldLeaseExpiresAt)
+	}
+	if m.FieldCleared(fsckrepairbatch.FieldStartedAt) {
+		fields = append(fields, fsckrepairbatch.FieldStartedAt)
+	}
+	if m.FieldCleared(fsckrepairbatch.FieldFinishedAt) {
+		fields = append(fields, fsckrepairbatch.FieldFinishedAt)
+	}
+	if m.FieldCleared(fsckrepairbatch.FieldSummary) {
+		fields = append(fields, fsckrepairbatch.FieldSummary)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *FsckRepairBatchMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *FsckRepairBatchMutation) ClearField(name string) error {
+	switch name {
+	case fsckrepairbatch.FieldUpdatedAt:
+		m.ClearUpdatedAt()
+		return nil
+	case fsckrepairbatch.FieldActiveSlot:
+		m.ClearActiveSlot()
+		return nil
+	case fsckrepairbatch.FieldLeaseExpiresAt:
+		m.ClearLeaseExpiresAt()
+		return nil
+	case fsckrepairbatch.FieldStartedAt:
+		m.ClearStartedAt()
+		return nil
+	case fsckrepairbatch.FieldFinishedAt:
+		m.ClearFinishedAt()
+		return nil
+	case fsckrepairbatch.FieldSummary:
+		m.ClearSummary()
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairBatch nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *FsckRepairBatchMutation) ResetField(name string) error {
+	switch name {
+	case fsckrepairbatch.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case fsckrepairbatch.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case fsckrepairbatch.FieldUID:
+		m.ResetUID()
+		return nil
+	case fsckrepairbatch.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case fsckrepairbatch.FieldActiveSlot:
+		m.ResetActiveSlot()
+		return nil
+	case fsckrepairbatch.FieldConsent:
+		m.ResetConsent()
+		return nil
+	case fsckrepairbatch.FieldCdcMode:
+		m.ResetCdcMode()
+		return nil
+	case fsckrepairbatch.FieldVerifyContent:
+		m.ResetVerifyContent()
+		return nil
+	case fsckrepairbatch.FieldExecutorID:
+		m.ResetExecutorID()
+		return nil
+	case fsckrepairbatch.FieldExecutorName:
+		m.ResetExecutorName()
+		return nil
+	case fsckrepairbatch.FieldFenceToken:
+		m.ResetFenceToken()
+		return nil
+	case fsckrepairbatch.FieldLeaseExpiresAt:
+		m.ResetLeaseExpiresAt()
+		return nil
+	case fsckrepairbatch.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case fsckrepairbatch.FieldFinishedAt:
+		m.ResetFinishedAt()
+		return nil
+	case fsckrepairbatch.FieldSummary:
+		m.ResetSummary()
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairBatch field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *FsckRepairBatchMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.items != nil {
+		edges = append(edges, fsckrepairbatch.EdgeItems)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *FsckRepairBatchMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case fsckrepairbatch.EdgeItems:
+		ids := make([]ent.Value, 0, len(m.items))
+		for id := range m.items {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *FsckRepairBatchMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.removeditems != nil {
+		edges = append(edges, fsckrepairbatch.EdgeItems)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *FsckRepairBatchMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case fsckrepairbatch.EdgeItems:
+		ids := make([]ent.Value, 0, len(m.removeditems))
+		for id := range m.removeditems {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *FsckRepairBatchMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.cleareditems {
+		edges = append(edges, fsckrepairbatch.EdgeItems)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *FsckRepairBatchMutation) EdgeCleared(name string) bool {
+	switch name {
+	case fsckrepairbatch.EdgeItems:
+		return m.cleareditems
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *FsckRepairBatchMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown FsckRepairBatch unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *FsckRepairBatchMutation) ResetEdge(name string) error {
+	switch name {
+	case fsckrepairbatch.EdgeItems:
+		m.ResetItems()
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairBatch edge %s", name)
+}
+
+// FsckRepairItemMutation represents an operation that mutates the FsckRepairItem nodes in the graph.
+type FsckRepairItemMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int
+	created_at    *time.Time
+	updated_at    *time.Time
+	uid           *string
+	seq           *int
+	addseq        *int
+	kind          *string
+	issue_type    *string
+	action        *string
+	object_key    *string
+	object_id     *int
+	addobject_id  *int
+	facts         *string
+	status        *string
+	phase         *string
+	attempts      *int
+	addattempts   *int
+	last_error    *string
+	skip_reason   *string
+	claimed_by    *string
+	claimed_at    *time.Time
+	completed_at  *time.Time
+	clearedFields map[string]struct{}
+	batch         *int
+	clearedbatch  bool
+	done          bool
+	oldValue      func(context.Context) (*FsckRepairItem, error)
+	predicates    []predicate.FsckRepairItem
+}
+
+var _ ent.Mutation = (*FsckRepairItemMutation)(nil)
+
+// fsckrepairitemOption allows management of the mutation configuration using functional options.
+type fsckrepairitemOption func(*FsckRepairItemMutation)
+
+// newFsckRepairItemMutation creates new mutation for the FsckRepairItem entity.
+func newFsckRepairItemMutation(c config, op Op, opts ...fsckrepairitemOption) *FsckRepairItemMutation {
+	m := &FsckRepairItemMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeFsckRepairItem,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withFsckRepairItemID sets the ID field of the mutation.
+func withFsckRepairItemID(id int) fsckrepairitemOption {
+	return func(m *FsckRepairItemMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *FsckRepairItem
+		)
+		m.oldValue = func(ctx context.Context) (*FsckRepairItem, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().FsckRepairItem.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withFsckRepairItem sets the old FsckRepairItem of the mutation.
+func withFsckRepairItem(node *FsckRepairItem) fsckrepairitemOption {
+	return func(m *FsckRepairItemMutation) {
+		m.oldValue = func(context.Context) (*FsckRepairItem, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m FsckRepairItemMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m FsckRepairItemMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *FsckRepairItemMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *FsckRepairItemMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().FsckRepairItem.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *FsckRepairItemMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *FsckRepairItemMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *FsckRepairItemMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *FsckRepairItemMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *FsckRepairItemMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldUpdatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (m *FsckRepairItemMutation) ClearUpdatedAt() {
+	m.updated_at = nil
+	m.clearedFields[fsckrepairitem.FieldUpdatedAt] = struct{}{}
+}
+
+// UpdatedAtCleared returns if the "updated_at" field was cleared in this mutation.
+func (m *FsckRepairItemMutation) UpdatedAtCleared() bool {
+	_, ok := m.clearedFields[fsckrepairitem.FieldUpdatedAt]
+	return ok
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *FsckRepairItemMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+	delete(m.clearedFields, fsckrepairitem.FieldUpdatedAt)
+}
+
+// SetBatchID sets the "batch_id" field.
+func (m *FsckRepairItemMutation) SetBatchID(i int) {
+	m.batch = &i
+}
+
+// BatchID returns the value of the "batch_id" field in the mutation.
+func (m *FsckRepairItemMutation) BatchID() (r int, exists bool) {
+	v := m.batch
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBatchID returns the old "batch_id" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldBatchID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBatchID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBatchID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBatchID: %w", err)
+	}
+	return oldValue.BatchID, nil
+}
+
+// ResetBatchID resets all changes to the "batch_id" field.
+func (m *FsckRepairItemMutation) ResetBatchID() {
+	m.batch = nil
+}
+
+// SetUID sets the "uid" field.
+func (m *FsckRepairItemMutation) SetUID(s string) {
+	m.uid = &s
+}
+
+// UID returns the value of the "uid" field in the mutation.
+func (m *FsckRepairItemMutation) UID() (r string, exists bool) {
+	v := m.uid
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUID returns the old "uid" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldUID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUID: %w", err)
+	}
+	return oldValue.UID, nil
+}
+
+// ResetUID resets all changes to the "uid" field.
+func (m *FsckRepairItemMutation) ResetUID() {
+	m.uid = nil
+}
+
+// SetSeq sets the "seq" field.
+func (m *FsckRepairItemMutation) SetSeq(i int) {
+	m.seq = &i
+	m.addseq = nil
+}
+
+// Seq returns the value of the "seq" field in the mutation.
+func (m *FsckRepairItemMutation) Seq() (r int, exists bool) {
+	v := m.seq
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSeq returns the old "seq" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldSeq(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSeq is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSeq requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSeq: %w", err)
+	}
+	return oldValue.Seq, nil
+}
+
+// AddSeq adds i to the "seq" field.
+func (m *FsckRepairItemMutation) AddSeq(i int) {
+	if m.addseq != nil {
+		*m.addseq += i
+	} else {
+		m.addseq = &i
+	}
+}
+
+// AddedSeq returns the value that was added to the "seq" field in this mutation.
+func (m *FsckRepairItemMutation) AddedSeq() (r int, exists bool) {
+	v := m.addseq
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSeq resets all changes to the "seq" field.
+func (m *FsckRepairItemMutation) ResetSeq() {
+	m.seq = nil
+	m.addseq = nil
+}
+
+// SetKind sets the "kind" field.
+func (m *FsckRepairItemMutation) SetKind(s string) {
+	m.kind = &s
+}
+
+// Kind returns the value of the "kind" field in the mutation.
+func (m *FsckRepairItemMutation) Kind() (r string, exists bool) {
+	v := m.kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKind returns the old "kind" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldKind(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKind: %w", err)
+	}
+	return oldValue.Kind, nil
+}
+
+// ResetKind resets all changes to the "kind" field.
+func (m *FsckRepairItemMutation) ResetKind() {
+	m.kind = nil
+}
+
+// SetIssueType sets the "issue_type" field.
+func (m *FsckRepairItemMutation) SetIssueType(s string) {
+	m.issue_type = &s
+}
+
+// IssueType returns the value of the "issue_type" field in the mutation.
+func (m *FsckRepairItemMutation) IssueType() (r string, exists bool) {
+	v := m.issue_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIssueType returns the old "issue_type" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldIssueType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIssueType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIssueType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIssueType: %w", err)
+	}
+	return oldValue.IssueType, nil
+}
+
+// ResetIssueType resets all changes to the "issue_type" field.
+func (m *FsckRepairItemMutation) ResetIssueType() {
+	m.issue_type = nil
+}
+
+// SetAction sets the "action" field.
+func (m *FsckRepairItemMutation) SetAction(s string) {
+	m.action = &s
+}
+
+// Action returns the value of the "action" field in the mutation.
+func (m *FsckRepairItemMutation) Action() (r string, exists bool) {
+	v := m.action
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAction returns the old "action" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldAction(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAction is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAction requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAction: %w", err)
+	}
+	return oldValue.Action, nil
+}
+
+// ResetAction resets all changes to the "action" field.
+func (m *FsckRepairItemMutation) ResetAction() {
+	m.action = nil
+}
+
+// SetObjectKey sets the "object_key" field.
+func (m *FsckRepairItemMutation) SetObjectKey(s string) {
+	m.object_key = &s
+}
+
+// ObjectKey returns the value of the "object_key" field in the mutation.
+func (m *FsckRepairItemMutation) ObjectKey() (r string, exists bool) {
+	v := m.object_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldObjectKey returns the old "object_key" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldObjectKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldObjectKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldObjectKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldObjectKey: %w", err)
+	}
+	return oldValue.ObjectKey, nil
+}
+
+// ResetObjectKey resets all changes to the "object_key" field.
+func (m *FsckRepairItemMutation) ResetObjectKey() {
+	m.object_key = nil
+}
+
+// SetObjectID sets the "object_id" field.
+func (m *FsckRepairItemMutation) SetObjectID(i int) {
+	m.object_id = &i
+	m.addobject_id = nil
+}
+
+// ObjectID returns the value of the "object_id" field in the mutation.
+func (m *FsckRepairItemMutation) ObjectID() (r int, exists bool) {
+	v := m.object_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldObjectID returns the old "object_id" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldObjectID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldObjectID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldObjectID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldObjectID: %w", err)
+	}
+	return oldValue.ObjectID, nil
+}
+
+// AddObjectID adds i to the "object_id" field.
+func (m *FsckRepairItemMutation) AddObjectID(i int) {
+	if m.addobject_id != nil {
+		*m.addobject_id += i
+	} else {
+		m.addobject_id = &i
+	}
+}
+
+// AddedObjectID returns the value that was added to the "object_id" field in this mutation.
+func (m *FsckRepairItemMutation) AddedObjectID() (r int, exists bool) {
+	v := m.addobject_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearObjectID clears the value of the "object_id" field.
+func (m *FsckRepairItemMutation) ClearObjectID() {
+	m.object_id = nil
+	m.addobject_id = nil
+	m.clearedFields[fsckrepairitem.FieldObjectID] = struct{}{}
+}
+
+// ObjectIDCleared returns if the "object_id" field was cleared in this mutation.
+func (m *FsckRepairItemMutation) ObjectIDCleared() bool {
+	_, ok := m.clearedFields[fsckrepairitem.FieldObjectID]
+	return ok
+}
+
+// ResetObjectID resets all changes to the "object_id" field.
+func (m *FsckRepairItemMutation) ResetObjectID() {
+	m.object_id = nil
+	m.addobject_id = nil
+	delete(m.clearedFields, fsckrepairitem.FieldObjectID)
+}
+
+// SetFacts sets the "facts" field.
+func (m *FsckRepairItemMutation) SetFacts(s string) {
+	m.facts = &s
+}
+
+// Facts returns the value of the "facts" field in the mutation.
+func (m *FsckRepairItemMutation) Facts() (r string, exists bool) {
+	v := m.facts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFacts returns the old "facts" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldFacts(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFacts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFacts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFacts: %w", err)
+	}
+	return oldValue.Facts, nil
+}
+
+// ClearFacts clears the value of the "facts" field.
+func (m *FsckRepairItemMutation) ClearFacts() {
+	m.facts = nil
+	m.clearedFields[fsckrepairitem.FieldFacts] = struct{}{}
+}
+
+// FactsCleared returns if the "facts" field was cleared in this mutation.
+func (m *FsckRepairItemMutation) FactsCleared() bool {
+	_, ok := m.clearedFields[fsckrepairitem.FieldFacts]
+	return ok
+}
+
+// ResetFacts resets all changes to the "facts" field.
+func (m *FsckRepairItemMutation) ResetFacts() {
+	m.facts = nil
+	delete(m.clearedFields, fsckrepairitem.FieldFacts)
+}
+
+// SetStatus sets the "status" field.
+func (m *FsckRepairItemMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *FsckRepairItemMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *FsckRepairItemMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetPhase sets the "phase" field.
+func (m *FsckRepairItemMutation) SetPhase(s string) {
+	m.phase = &s
+}
+
+// Phase returns the value of the "phase" field in the mutation.
+func (m *FsckRepairItemMutation) Phase() (r string, exists bool) {
+	v := m.phase
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPhase returns the old "phase" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldPhase(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPhase is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPhase requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPhase: %w", err)
+	}
+	return oldValue.Phase, nil
+}
+
+// ResetPhase resets all changes to the "phase" field.
+func (m *FsckRepairItemMutation) ResetPhase() {
+	m.phase = nil
+}
+
+// SetAttempts sets the "attempts" field.
+func (m *FsckRepairItemMutation) SetAttempts(i int) {
+	m.attempts = &i
+	m.addattempts = nil
+}
+
+// Attempts returns the value of the "attempts" field in the mutation.
+func (m *FsckRepairItemMutation) Attempts() (r int, exists bool) {
+	v := m.attempts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAttempts returns the old "attempts" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldAttempts(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAttempts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAttempts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAttempts: %w", err)
+	}
+	return oldValue.Attempts, nil
+}
+
+// AddAttempts adds i to the "attempts" field.
+func (m *FsckRepairItemMutation) AddAttempts(i int) {
+	if m.addattempts != nil {
+		*m.addattempts += i
+	} else {
+		m.addattempts = &i
+	}
+}
+
+// AddedAttempts returns the value that was added to the "attempts" field in this mutation.
+func (m *FsckRepairItemMutation) AddedAttempts() (r int, exists bool) {
+	v := m.addattempts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAttempts resets all changes to the "attempts" field.
+func (m *FsckRepairItemMutation) ResetAttempts() {
+	m.attempts = nil
+	m.addattempts = nil
+}
+
+// SetLastError sets the "last_error" field.
+func (m *FsckRepairItemMutation) SetLastError(s string) {
+	m.last_error = &s
+}
+
+// LastError returns the value of the "last_error" field in the mutation.
+func (m *FsckRepairItemMutation) LastError() (r string, exists bool) {
+	v := m.last_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastError returns the old "last_error" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldLastError(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastError: %w", err)
+	}
+	return oldValue.LastError, nil
+}
+
+// ClearLastError clears the value of the "last_error" field.
+func (m *FsckRepairItemMutation) ClearLastError() {
+	m.last_error = nil
+	m.clearedFields[fsckrepairitem.FieldLastError] = struct{}{}
+}
+
+// LastErrorCleared returns if the "last_error" field was cleared in this mutation.
+func (m *FsckRepairItemMutation) LastErrorCleared() bool {
+	_, ok := m.clearedFields[fsckrepairitem.FieldLastError]
+	return ok
+}
+
+// ResetLastError resets all changes to the "last_error" field.
+func (m *FsckRepairItemMutation) ResetLastError() {
+	m.last_error = nil
+	delete(m.clearedFields, fsckrepairitem.FieldLastError)
+}
+
+// SetSkipReason sets the "skip_reason" field.
+func (m *FsckRepairItemMutation) SetSkipReason(s string) {
+	m.skip_reason = &s
+}
+
+// SkipReason returns the value of the "skip_reason" field in the mutation.
+func (m *FsckRepairItemMutation) SkipReason() (r string, exists bool) {
+	v := m.skip_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkipReason returns the old "skip_reason" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldSkipReason(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkipReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkipReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkipReason: %w", err)
+	}
+	return oldValue.SkipReason, nil
+}
+
+// ClearSkipReason clears the value of the "skip_reason" field.
+func (m *FsckRepairItemMutation) ClearSkipReason() {
+	m.skip_reason = nil
+	m.clearedFields[fsckrepairitem.FieldSkipReason] = struct{}{}
+}
+
+// SkipReasonCleared returns if the "skip_reason" field was cleared in this mutation.
+func (m *FsckRepairItemMutation) SkipReasonCleared() bool {
+	_, ok := m.clearedFields[fsckrepairitem.FieldSkipReason]
+	return ok
+}
+
+// ResetSkipReason resets all changes to the "skip_reason" field.
+func (m *FsckRepairItemMutation) ResetSkipReason() {
+	m.skip_reason = nil
+	delete(m.clearedFields, fsckrepairitem.FieldSkipReason)
+}
+
+// SetClaimedBy sets the "claimed_by" field.
+func (m *FsckRepairItemMutation) SetClaimedBy(s string) {
+	m.claimed_by = &s
+}
+
+// ClaimedBy returns the value of the "claimed_by" field in the mutation.
+func (m *FsckRepairItemMutation) ClaimedBy() (r string, exists bool) {
+	v := m.claimed_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClaimedBy returns the old "claimed_by" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldClaimedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClaimedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClaimedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClaimedBy: %w", err)
+	}
+	return oldValue.ClaimedBy, nil
+}
+
+// ResetClaimedBy resets all changes to the "claimed_by" field.
+func (m *FsckRepairItemMutation) ResetClaimedBy() {
+	m.claimed_by = nil
+}
+
+// SetClaimedAt sets the "claimed_at" field.
+func (m *FsckRepairItemMutation) SetClaimedAt(t time.Time) {
+	m.claimed_at = &t
+}
+
+// ClaimedAt returns the value of the "claimed_at" field in the mutation.
+func (m *FsckRepairItemMutation) ClaimedAt() (r time.Time, exists bool) {
+	v := m.claimed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClaimedAt returns the old "claimed_at" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldClaimedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClaimedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClaimedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClaimedAt: %w", err)
+	}
+	return oldValue.ClaimedAt, nil
+}
+
+// ClearClaimedAt clears the value of the "claimed_at" field.
+func (m *FsckRepairItemMutation) ClearClaimedAt() {
+	m.claimed_at = nil
+	m.clearedFields[fsckrepairitem.FieldClaimedAt] = struct{}{}
+}
+
+// ClaimedAtCleared returns if the "claimed_at" field was cleared in this mutation.
+func (m *FsckRepairItemMutation) ClaimedAtCleared() bool {
+	_, ok := m.clearedFields[fsckrepairitem.FieldClaimedAt]
+	return ok
+}
+
+// ResetClaimedAt resets all changes to the "claimed_at" field.
+func (m *FsckRepairItemMutation) ResetClaimedAt() {
+	m.claimed_at = nil
+	delete(m.clearedFields, fsckrepairitem.FieldClaimedAt)
+}
+
+// SetCompletedAt sets the "completed_at" field.
+func (m *FsckRepairItemMutation) SetCompletedAt(t time.Time) {
+	m.completed_at = &t
+}
+
+// CompletedAt returns the value of the "completed_at" field in the mutation.
+func (m *FsckRepairItemMutation) CompletedAt() (r time.Time, exists bool) {
+	v := m.completed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompletedAt returns the old "completed_at" field's value of the FsckRepairItem entity.
+// If the FsckRepairItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FsckRepairItemMutation) OldCompletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompletedAt: %w", err)
+	}
+	return oldValue.CompletedAt, nil
+}
+
+// ClearCompletedAt clears the value of the "completed_at" field.
+func (m *FsckRepairItemMutation) ClearCompletedAt() {
+	m.completed_at = nil
+	m.clearedFields[fsckrepairitem.FieldCompletedAt] = struct{}{}
+}
+
+// CompletedAtCleared returns if the "completed_at" field was cleared in this mutation.
+func (m *FsckRepairItemMutation) CompletedAtCleared() bool {
+	_, ok := m.clearedFields[fsckrepairitem.FieldCompletedAt]
+	return ok
+}
+
+// ResetCompletedAt resets all changes to the "completed_at" field.
+func (m *FsckRepairItemMutation) ResetCompletedAt() {
+	m.completed_at = nil
+	delete(m.clearedFields, fsckrepairitem.FieldCompletedAt)
+}
+
+// ClearBatch clears the "batch" edge to the FsckRepairBatch entity.
+func (m *FsckRepairItemMutation) ClearBatch() {
+	m.clearedbatch = true
+	m.clearedFields[fsckrepairitem.FieldBatchID] = struct{}{}
+}
+
+// BatchCleared reports if the "batch" edge to the FsckRepairBatch entity was cleared.
+func (m *FsckRepairItemMutation) BatchCleared() bool {
+	return m.clearedbatch
+}
+
+// BatchIDs returns the "batch" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// BatchID instead. It exists only for internal usage by the builders.
+func (m *FsckRepairItemMutation) BatchIDs() (ids []int) {
+	if id := m.batch; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetBatch resets all changes to the "batch" edge.
+func (m *FsckRepairItemMutation) ResetBatch() {
+	m.batch = nil
+	m.clearedbatch = false
+}
+
+// Where appends a list predicates to the FsckRepairItemMutation builder.
+func (m *FsckRepairItemMutation) Where(ps ...predicate.FsckRepairItem) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the FsckRepairItemMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *FsckRepairItemMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.FsckRepairItem, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *FsckRepairItemMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *FsckRepairItemMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (FsckRepairItem).
+func (m *FsckRepairItemMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *FsckRepairItemMutation) Fields() []string {
+	fields := make([]string, 0, 19)
+	if m.created_at != nil {
+		fields = append(fields, fsckrepairitem.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, fsckrepairitem.FieldUpdatedAt)
+	}
+	if m.batch != nil {
+		fields = append(fields, fsckrepairitem.FieldBatchID)
+	}
+	if m.uid != nil {
+		fields = append(fields, fsckrepairitem.FieldUID)
+	}
+	if m.seq != nil {
+		fields = append(fields, fsckrepairitem.FieldSeq)
+	}
+	if m.kind != nil {
+		fields = append(fields, fsckrepairitem.FieldKind)
+	}
+	if m.issue_type != nil {
+		fields = append(fields, fsckrepairitem.FieldIssueType)
+	}
+	if m.action != nil {
+		fields = append(fields, fsckrepairitem.FieldAction)
+	}
+	if m.object_key != nil {
+		fields = append(fields, fsckrepairitem.FieldObjectKey)
+	}
+	if m.object_id != nil {
+		fields = append(fields, fsckrepairitem.FieldObjectID)
+	}
+	if m.facts != nil {
+		fields = append(fields, fsckrepairitem.FieldFacts)
+	}
+	if m.status != nil {
+		fields = append(fields, fsckrepairitem.FieldStatus)
+	}
+	if m.phase != nil {
+		fields = append(fields, fsckrepairitem.FieldPhase)
+	}
+	if m.attempts != nil {
+		fields = append(fields, fsckrepairitem.FieldAttempts)
+	}
+	if m.last_error != nil {
+		fields = append(fields, fsckrepairitem.FieldLastError)
+	}
+	if m.skip_reason != nil {
+		fields = append(fields, fsckrepairitem.FieldSkipReason)
+	}
+	if m.claimed_by != nil {
+		fields = append(fields, fsckrepairitem.FieldClaimedBy)
+	}
+	if m.claimed_at != nil {
+		fields = append(fields, fsckrepairitem.FieldClaimedAt)
+	}
+	if m.completed_at != nil {
+		fields = append(fields, fsckrepairitem.FieldCompletedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *FsckRepairItemMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case fsckrepairitem.FieldCreatedAt:
+		return m.CreatedAt()
+	case fsckrepairitem.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case fsckrepairitem.FieldBatchID:
+		return m.BatchID()
+	case fsckrepairitem.FieldUID:
+		return m.UID()
+	case fsckrepairitem.FieldSeq:
+		return m.Seq()
+	case fsckrepairitem.FieldKind:
+		return m.Kind()
+	case fsckrepairitem.FieldIssueType:
+		return m.IssueType()
+	case fsckrepairitem.FieldAction:
+		return m.Action()
+	case fsckrepairitem.FieldObjectKey:
+		return m.ObjectKey()
+	case fsckrepairitem.FieldObjectID:
+		return m.ObjectID()
+	case fsckrepairitem.FieldFacts:
+		return m.Facts()
+	case fsckrepairitem.FieldStatus:
+		return m.Status()
+	case fsckrepairitem.FieldPhase:
+		return m.Phase()
+	case fsckrepairitem.FieldAttempts:
+		return m.Attempts()
+	case fsckrepairitem.FieldLastError:
+		return m.LastError()
+	case fsckrepairitem.FieldSkipReason:
+		return m.SkipReason()
+	case fsckrepairitem.FieldClaimedBy:
+		return m.ClaimedBy()
+	case fsckrepairitem.FieldClaimedAt:
+		return m.ClaimedAt()
+	case fsckrepairitem.FieldCompletedAt:
+		return m.CompletedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *FsckRepairItemMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case fsckrepairitem.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case fsckrepairitem.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case fsckrepairitem.FieldBatchID:
+		return m.OldBatchID(ctx)
+	case fsckrepairitem.FieldUID:
+		return m.OldUID(ctx)
+	case fsckrepairitem.FieldSeq:
+		return m.OldSeq(ctx)
+	case fsckrepairitem.FieldKind:
+		return m.OldKind(ctx)
+	case fsckrepairitem.FieldIssueType:
+		return m.OldIssueType(ctx)
+	case fsckrepairitem.FieldAction:
+		return m.OldAction(ctx)
+	case fsckrepairitem.FieldObjectKey:
+		return m.OldObjectKey(ctx)
+	case fsckrepairitem.FieldObjectID:
+		return m.OldObjectID(ctx)
+	case fsckrepairitem.FieldFacts:
+		return m.OldFacts(ctx)
+	case fsckrepairitem.FieldStatus:
+		return m.OldStatus(ctx)
+	case fsckrepairitem.FieldPhase:
+		return m.OldPhase(ctx)
+	case fsckrepairitem.FieldAttempts:
+		return m.OldAttempts(ctx)
+	case fsckrepairitem.FieldLastError:
+		return m.OldLastError(ctx)
+	case fsckrepairitem.FieldSkipReason:
+		return m.OldSkipReason(ctx)
+	case fsckrepairitem.FieldClaimedBy:
+		return m.OldClaimedBy(ctx)
+	case fsckrepairitem.FieldClaimedAt:
+		return m.OldClaimedAt(ctx)
+	case fsckrepairitem.FieldCompletedAt:
+		return m.OldCompletedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown FsckRepairItem field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *FsckRepairItemMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case fsckrepairitem.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case fsckrepairitem.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case fsckrepairitem.FieldBatchID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBatchID(v)
+		return nil
+	case fsckrepairitem.FieldUID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUID(v)
+		return nil
+	case fsckrepairitem.FieldSeq:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSeq(v)
+		return nil
+	case fsckrepairitem.FieldKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKind(v)
+		return nil
+	case fsckrepairitem.FieldIssueType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIssueType(v)
+		return nil
+	case fsckrepairitem.FieldAction:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAction(v)
+		return nil
+	case fsckrepairitem.FieldObjectKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetObjectKey(v)
+		return nil
+	case fsckrepairitem.FieldObjectID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetObjectID(v)
+		return nil
+	case fsckrepairitem.FieldFacts:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFacts(v)
+		return nil
+	case fsckrepairitem.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case fsckrepairitem.FieldPhase:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPhase(v)
+		return nil
+	case fsckrepairitem.FieldAttempts:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAttempts(v)
+		return nil
+	case fsckrepairitem.FieldLastError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastError(v)
+		return nil
+	case fsckrepairitem.FieldSkipReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkipReason(v)
+		return nil
+	case fsckrepairitem.FieldClaimedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClaimedBy(v)
+		return nil
+	case fsckrepairitem.FieldClaimedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClaimedAt(v)
+		return nil
+	case fsckrepairitem.FieldCompletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompletedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairItem field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *FsckRepairItemMutation) AddedFields() []string {
+	var fields []string
+	if m.addseq != nil {
+		fields = append(fields, fsckrepairitem.FieldSeq)
+	}
+	if m.addobject_id != nil {
+		fields = append(fields, fsckrepairitem.FieldObjectID)
+	}
+	if m.addattempts != nil {
+		fields = append(fields, fsckrepairitem.FieldAttempts)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *FsckRepairItemMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case fsckrepairitem.FieldSeq:
+		return m.AddedSeq()
+	case fsckrepairitem.FieldObjectID:
+		return m.AddedObjectID()
+	case fsckrepairitem.FieldAttempts:
+		return m.AddedAttempts()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *FsckRepairItemMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case fsckrepairitem.FieldSeq:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSeq(v)
+		return nil
+	case fsckrepairitem.FieldObjectID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddObjectID(v)
+		return nil
+	case fsckrepairitem.FieldAttempts:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAttempts(v)
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairItem numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *FsckRepairItemMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(fsckrepairitem.FieldUpdatedAt) {
+		fields = append(fields, fsckrepairitem.FieldUpdatedAt)
+	}
+	if m.FieldCleared(fsckrepairitem.FieldObjectID) {
+		fields = append(fields, fsckrepairitem.FieldObjectID)
+	}
+	if m.FieldCleared(fsckrepairitem.FieldFacts) {
+		fields = append(fields, fsckrepairitem.FieldFacts)
+	}
+	if m.FieldCleared(fsckrepairitem.FieldLastError) {
+		fields = append(fields, fsckrepairitem.FieldLastError)
+	}
+	if m.FieldCleared(fsckrepairitem.FieldSkipReason) {
+		fields = append(fields, fsckrepairitem.FieldSkipReason)
+	}
+	if m.FieldCleared(fsckrepairitem.FieldClaimedAt) {
+		fields = append(fields, fsckrepairitem.FieldClaimedAt)
+	}
+	if m.FieldCleared(fsckrepairitem.FieldCompletedAt) {
+		fields = append(fields, fsckrepairitem.FieldCompletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *FsckRepairItemMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *FsckRepairItemMutation) ClearField(name string) error {
+	switch name {
+	case fsckrepairitem.FieldUpdatedAt:
+		m.ClearUpdatedAt()
+		return nil
+	case fsckrepairitem.FieldObjectID:
+		m.ClearObjectID()
+		return nil
+	case fsckrepairitem.FieldFacts:
+		m.ClearFacts()
+		return nil
+	case fsckrepairitem.FieldLastError:
+		m.ClearLastError()
+		return nil
+	case fsckrepairitem.FieldSkipReason:
+		m.ClearSkipReason()
+		return nil
+	case fsckrepairitem.FieldClaimedAt:
+		m.ClearClaimedAt()
+		return nil
+	case fsckrepairitem.FieldCompletedAt:
+		m.ClearCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairItem nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *FsckRepairItemMutation) ResetField(name string) error {
+	switch name {
+	case fsckrepairitem.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case fsckrepairitem.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case fsckrepairitem.FieldBatchID:
+		m.ResetBatchID()
+		return nil
+	case fsckrepairitem.FieldUID:
+		m.ResetUID()
+		return nil
+	case fsckrepairitem.FieldSeq:
+		m.ResetSeq()
+		return nil
+	case fsckrepairitem.FieldKind:
+		m.ResetKind()
+		return nil
+	case fsckrepairitem.FieldIssueType:
+		m.ResetIssueType()
+		return nil
+	case fsckrepairitem.FieldAction:
+		m.ResetAction()
+		return nil
+	case fsckrepairitem.FieldObjectKey:
+		m.ResetObjectKey()
+		return nil
+	case fsckrepairitem.FieldObjectID:
+		m.ResetObjectID()
+		return nil
+	case fsckrepairitem.FieldFacts:
+		m.ResetFacts()
+		return nil
+	case fsckrepairitem.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case fsckrepairitem.FieldPhase:
+		m.ResetPhase()
+		return nil
+	case fsckrepairitem.FieldAttempts:
+		m.ResetAttempts()
+		return nil
+	case fsckrepairitem.FieldLastError:
+		m.ResetLastError()
+		return nil
+	case fsckrepairitem.FieldSkipReason:
+		m.ResetSkipReason()
+		return nil
+	case fsckrepairitem.FieldClaimedBy:
+		m.ResetClaimedBy()
+		return nil
+	case fsckrepairitem.FieldClaimedAt:
+		m.ResetClaimedAt()
+		return nil
+	case fsckrepairitem.FieldCompletedAt:
+		m.ResetCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairItem field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *FsckRepairItemMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.batch != nil {
+		edges = append(edges, fsckrepairitem.EdgeBatch)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *FsckRepairItemMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case fsckrepairitem.EdgeBatch:
+		if id := m.batch; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *FsckRepairItemMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *FsckRepairItemMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *FsckRepairItemMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedbatch {
+		edges = append(edges, fsckrepairitem.EdgeBatch)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *FsckRepairItemMutation) EdgeCleared(name string) bool {
+	switch name {
+	case fsckrepairitem.EdgeBatch:
+		return m.clearedbatch
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *FsckRepairItemMutation) ClearEdge(name string) error {
+	switch name {
+	case fsckrepairitem.EdgeBatch:
+		m.ClearBatch()
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairItem unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *FsckRepairItemMutation) ResetEdge(name string) error {
+	switch name {
+	case fsckrepairitem.EdgeBatch:
+		m.ResetBatch()
+		return nil
+	}
+	return fmt.Errorf("unknown FsckRepairItem edge %s", name)
 }
 
 // NarFileMutation represents an operation that mutates the NarFile nodes in the graph.

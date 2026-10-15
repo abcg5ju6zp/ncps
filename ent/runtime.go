@@ -9,6 +9,8 @@ import (
 	"github.com/kalbasit/ncps/ent/buildtracesignature"
 	"github.com/kalbasit/ncps/ent/chunk"
 	"github.com/kalbasit/ncps/ent/configentry"
+	"github.com/kalbasit/ncps/ent/fsckrepairbatch"
+	"github.com/kalbasit/ncps/ent/fsckrepairitem"
 	"github.com/kalbasit/ncps/ent/narfile"
 	"github.com/kalbasit/ncps/ent/narinfo"
 	"github.com/kalbasit/ncps/ent/narinforeference"
@@ -91,6 +93,84 @@ func init() {
 	configentryDescValue := configentryFields[1].Descriptor()
 	// configentry.ValueValidator is a validator for the "value" field. It is called by the builders before save.
 	configentry.ValueValidator = configentryDescValue.Validators[0].(func(string) error)
+	fsckrepairbatchMixin := schema.FsckRepairBatch{}.Mixin()
+	fsckrepairbatchMixinFields0 := fsckrepairbatchMixin[0].Fields()
+	_ = fsckrepairbatchMixinFields0
+	fsckrepairbatchFields := schema.FsckRepairBatch{}.Fields()
+	_ = fsckrepairbatchFields
+	// fsckrepairbatchDescCreatedAt is the schema descriptor for created_at field.
+	fsckrepairbatchDescCreatedAt := fsckrepairbatchMixinFields0[0].Descriptor()
+	// fsckrepairbatch.DefaultCreatedAt holds the default value on creation for the created_at field.
+	fsckrepairbatch.DefaultCreatedAt = fsckrepairbatchDescCreatedAt.Default.(func() time.Time)
+	// fsckrepairbatchDescUID is the schema descriptor for uid field.
+	fsckrepairbatchDescUID := fsckrepairbatchFields[0].Descriptor()
+	// fsckrepairbatch.UIDValidator is a validator for the "uid" field. It is called by the builders before save.
+	fsckrepairbatch.UIDValidator = fsckrepairbatchDescUID.Validators[0].(func(string) error)
+	// fsckrepairbatchDescStatus is the schema descriptor for status field.
+	fsckrepairbatchDescStatus := fsckrepairbatchFields[1].Descriptor()
+	// fsckrepairbatch.DefaultStatus holds the default value on creation for the status field.
+	fsckrepairbatch.DefaultStatus = fsckrepairbatchDescStatus.Default.(string)
+	// fsckrepairbatchDescConsent is the schema descriptor for consent field.
+	fsckrepairbatchDescConsent := fsckrepairbatchFields[3].Descriptor()
+	// fsckrepairbatch.DefaultConsent holds the default value on creation for the consent field.
+	fsckrepairbatch.DefaultConsent = fsckrepairbatchDescConsent.Default.(string)
+	// fsckrepairbatchDescCdcMode is the schema descriptor for cdc_mode field.
+	fsckrepairbatchDescCdcMode := fsckrepairbatchFields[4].Descriptor()
+	// fsckrepairbatch.DefaultCdcMode holds the default value on creation for the cdc_mode field.
+	fsckrepairbatch.DefaultCdcMode = fsckrepairbatchDescCdcMode.Default.(bool)
+	// fsckrepairbatchDescVerifyContent is the schema descriptor for verify_content field.
+	fsckrepairbatchDescVerifyContent := fsckrepairbatchFields[5].Descriptor()
+	// fsckrepairbatch.DefaultVerifyContent holds the default value on creation for the verify_content field.
+	fsckrepairbatch.DefaultVerifyContent = fsckrepairbatchDescVerifyContent.Default.(bool)
+	// fsckrepairbatchDescExecutorID is the schema descriptor for executor_id field.
+	fsckrepairbatchDescExecutorID := fsckrepairbatchFields[6].Descriptor()
+	// fsckrepairbatch.DefaultExecutorID holds the default value on creation for the executor_id field.
+	fsckrepairbatch.DefaultExecutorID = fsckrepairbatchDescExecutorID.Default.(string)
+	// fsckrepairbatchDescExecutorName is the schema descriptor for executor_name field.
+	fsckrepairbatchDescExecutorName := fsckrepairbatchFields[7].Descriptor()
+	// fsckrepairbatch.DefaultExecutorName holds the default value on creation for the executor_name field.
+	fsckrepairbatch.DefaultExecutorName = fsckrepairbatchDescExecutorName.Default.(string)
+	// fsckrepairbatchDescFenceToken is the schema descriptor for fence_token field.
+	fsckrepairbatchDescFenceToken := fsckrepairbatchFields[8].Descriptor()
+	// fsckrepairbatch.DefaultFenceToken holds the default value on creation for the fence_token field.
+	fsckrepairbatch.DefaultFenceToken = fsckrepairbatchDescFenceToken.Default.(int)
+	fsckrepairitemMixin := schema.FsckRepairItem{}.Mixin()
+	fsckrepairitemMixinFields0 := fsckrepairitemMixin[0].Fields()
+	_ = fsckrepairitemMixinFields0
+	fsckrepairitemFields := schema.FsckRepairItem{}.Fields()
+	_ = fsckrepairitemFields
+	// fsckrepairitemDescCreatedAt is the schema descriptor for created_at field.
+	fsckrepairitemDescCreatedAt := fsckrepairitemMixinFields0[0].Descriptor()
+	// fsckrepairitem.DefaultCreatedAt holds the default value on creation for the created_at field.
+	fsckrepairitem.DefaultCreatedAt = fsckrepairitemDescCreatedAt.Default.(func() time.Time)
+	// fsckrepairitemDescUID is the schema descriptor for uid field.
+	fsckrepairitemDescUID := fsckrepairitemFields[1].Descriptor()
+	// fsckrepairitem.UIDValidator is a validator for the "uid" field. It is called by the builders before save.
+	fsckrepairitem.UIDValidator = fsckrepairitemDescUID.Validators[0].(func(string) error)
+	// fsckrepairitemDescKind is the schema descriptor for kind field.
+	fsckrepairitemDescKind := fsckrepairitemFields[3].Descriptor()
+	// fsckrepairitem.DefaultKind holds the default value on creation for the kind field.
+	fsckrepairitem.DefaultKind = fsckrepairitemDescKind.Default.(string)
+	// fsckrepairitemDescObjectKey is the schema descriptor for object_key field.
+	fsckrepairitemDescObjectKey := fsckrepairitemFields[6].Descriptor()
+	// fsckrepairitem.DefaultObjectKey holds the default value on creation for the object_key field.
+	fsckrepairitem.DefaultObjectKey = fsckrepairitemDescObjectKey.Default.(string)
+	// fsckrepairitemDescStatus is the schema descriptor for status field.
+	fsckrepairitemDescStatus := fsckrepairitemFields[9].Descriptor()
+	// fsckrepairitem.DefaultStatus holds the default value on creation for the status field.
+	fsckrepairitem.DefaultStatus = fsckrepairitemDescStatus.Default.(string)
+	// fsckrepairitemDescPhase is the schema descriptor for phase field.
+	fsckrepairitemDescPhase := fsckrepairitemFields[10].Descriptor()
+	// fsckrepairitem.DefaultPhase holds the default value on creation for the phase field.
+	fsckrepairitem.DefaultPhase = fsckrepairitemDescPhase.Default.(string)
+	// fsckrepairitemDescAttempts is the schema descriptor for attempts field.
+	fsckrepairitemDescAttempts := fsckrepairitemFields[11].Descriptor()
+	// fsckrepairitem.DefaultAttempts holds the default value on creation for the attempts field.
+	fsckrepairitem.DefaultAttempts = fsckrepairitemDescAttempts.Default.(int)
+	// fsckrepairitemDescClaimedBy is the schema descriptor for claimed_by field.
+	fsckrepairitemDescClaimedBy := fsckrepairitemFields[14].Descriptor()
+	// fsckrepairitem.DefaultClaimedBy holds the default value on creation for the claimed_by field.
+	fsckrepairitem.DefaultClaimedBy = fsckrepairitemDescClaimedBy.Default.(string)
 	narfileMixin := schema.NarFile{}.Mixin()
 	narfileMixinFields0 := narfileMixin[0].Fields()
 	_ = narfileMixinFields0

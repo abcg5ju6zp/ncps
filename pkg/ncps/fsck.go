@@ -246,6 +246,12 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 					"(expensive: reads all chunk bytes from storage; use --verified-since to limit scope)",
 			},
 			&cli.DurationFlag{
+				Name: "repair-timeout",
+				Usage: "Maximum duration of fsck --repair before it stops claiming new items " +
+					"(0 = no timeout; the current item still finishes and is recorded)",
+				Sources: flagSources("cache.fsck.repair-timeout", "CACHE_FSCK_REPAIR_TIMEOUT"),
+			},
+			&cli.DurationFlag{
 				Name: "dechunk-residue-grace",
 				Usage: "Grace window before an un-de-chunkable chunked NAR (CDC residue) is reclaimed: " +
 					"fsck --repair flags it on first detection and only purges it on a later run once the " +
@@ -405,6 +411,21 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			logger := zerolog.Ctx(ctx).With().Str("cmd", "fsck").Logger()
 			ctx = logger.WithContext(ctx)
 
+			// Cancel on SIGINT/SIGTERM: the repair batch stops claiming new
+			// items, converges the in-flight action to a judgeable result, and
+			// parks the batch for resume.
+			var stopSignals func()
+
+			ctx, stopSignals = withFsckSignals(ctx, logger)
+			defer stopSignals()
+
+			if repairTimeout := cmd.Duration("repair-timeout"); repairTimeout > 0 {
+				var cancelTimeout context.CancelFunc
+
+				ctx, cancelTimeout = context.WithTimeout(ctx, repairTimeout)
+				defer cancelTimeout()
+			}
+
 			dryRun := cmd.Bool("dry-run")
 			repair := cmd.Bool("repair")
 			verifyContent := cmd.Bool("verify-content")
@@ -489,6 +510,17 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 				}
 
 				chunkStore = cs
+			}
+
+			// 5b. Continue a crash-interrupted repair batch instead of rescanning.
+			// Consent was already recorded when the batch was frozen; dry-run is a
+			// pure report and never adopts a batch.
+			if !dryRun {
+				if handled, resumeErr := resumeActiveFsckRepair(
+					ctx, cmd, dbClient, locker, narStore, &chunkStore, logger,
+				); handled || resumeErr != nil {
+					return resumeErr
+				}
 			}
 
 			// 6. Print the run plan so the operator can see which phases and
@@ -616,8 +648,30 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 				}
 			}
 
-			if err := repairFsckIssues(ctx, dbClient, narStore, chunkStore, results); err != nil {
-				return fmt.Errorf("error repairing issues: %w", err)
+			// Freeze the reviewed issue list into a persistent, single-executor
+			// repair batch and drive it to completion. The batch survives process
+			// exits: re-running fsck --repair adopts it and continues unfinished
+			// items from their precise checkpointed phase.
+			consent := repairConsentRepair
+			if !repair {
+				consent = repairConsentInteractive
+			}
+
+			report, repairErr := runFsckRepair(ctx, fsckRepairConfig{
+				db:         dbClient,
+				narStore:   narStore,
+				chunkStore: chunkStore,
+				results:    results,
+				consent:    consent,
+				cdcMode:    results.cdcMode && chunkStore != nil,
+			})
+
+			if report != nil {
+				printFsckRepairReport(os.Stdout, report)
+			}
+
+			if repairErr != nil {
+				return repairErr
 			}
 
 			fmt.Println("Repair complete.")
@@ -1485,385 +1539,6 @@ func relinkNarInfoToBackingNarFile(ctx context.Context, dbClient *database.Clien
 	return true, nil
 }
 
-// repairFsckIssues applies fixes for each category of issue, re-verifying each item before acting.
-func repairFsckIssues(
-	ctx context.Context,
-	dbClient *database.Client,
-	narStore storage.NarStore,
-	chunkStore chunk.Store,
-	results *fsckResults,
-) (err error) {
-	logger := zerolog.Ctx(ctx)
-
-	// Phase 3 progress: report through the same shared ticker/logProgress path as
-	// the scan phases. total is the confirmed-issue count this function actually
-	// repairs; checked advances as each issue category is processed. The chunked-
-	// residue categories are excluded because they are reconciled separately by
-	// reconcileChunkedResidue in fsckCommand, not here — counting them would leave
-	// checked permanently short of total.
-	total := int64(results.totalIssues() -
-		len(results.recoverableChunkedNarFiles) -
-		len(results.reclaimableChunkedResidue))
-
-	var checked atomic.Int64
-
-	startTime := time.Now()
-
-	stopTicker := startProgressTicker(func() {
-		logProgress(*logger, "3", startTime, checked.Load(), total).
-			Str("check", "repairing issues").
-			Msg("progress update")
-	})
-	defer stopTicker()
-
-	defer func() {
-		if err != nil {
-			logger.Warn().
-				Err(err).
-				Str("phase", "3").
-				Int64("checked", checked.Load()).
-				Int64("total", total).
-				Msg("phase 3: repair aborted")
-
-			return
-		}
-
-		logger.Info().
-			Str("phase", "3").
-			Int64("checked", checked.Load()).
-			Int64("total", total).
-			Msg("phase 3: repair complete")
-	}()
-
-	// a. Repair or delete narinfos without nar_files
-	for _, ni := range results.narinfosWithoutNarFiles {
-		checked.Add(1)
-
-		// Re-verify before acting
-		hasNarFile, err := dbClient.Ent().NarFile.Query().
-			Where(entnarfile.HasNarInfoNarFilesWith(entnarinfonarfile.NarinfoIDEQ(ni.ID))).
-			Exist(ctx)
-		if err != nil {
-			return fmt.Errorf("repair re-verify narinfo(%d): %w", ni.ID, err)
-		}
-
-		if hasNarFile {
-			// Now has a nar_file, skip
-			continue
-		}
-
-		// Before deleting, try to REPAIR. A known race — the narinfo_nar_files link
-		// is created in the narinfo-write path, decoupled from the async CDC chunking
-		// that finalizes the nar_file — can leave a perfectly valid, reachable narinfo
-		// unlinked from an EXISTING nar_file. Deleting it would destroy live metadata
-		// and orphan the NAR. If the nar_file the narinfo's URL references is present,
-		// recreate the missing link instead.
-		relinked, err := relinkNarInfoToBackingNarFile(ctx, dbClient, ni)
-		if err != nil {
-			return fmt.Errorf("repair relink narinfo(%d): %w", ni.ID, err)
-		}
-
-		if relinked {
-			logger.Info().Int("narinfo_id", ni.ID).Str("hash", ni.Hash).
-				Msg("repaired missing narinfo<->nar_file link")
-
-			continue
-		}
-
-		// No nar_file backs this narinfo's URL anywhere: it is genuinely orphaned.
-		if err := dbClient.Ent().NarInfo.DeleteOneID(ni.ID).Exec(ctx); err != nil {
-			logger.Error().Err(err).Int("narinfo_id", ni.ID).Msg("failed to delete narinfo without nar_file")
-		} else {
-			logger.Info().Int("narinfo_id", ni.ID).Str("hash", ni.Hash).Msg("deleted narinfo without nar_file")
-		}
-	}
-
-	// b. Delete orphaned nar_files in DB
-	for _, nf := range results.orphanedNarFilesInDB {
-		checked.Add(1)
-
-		// Re-verify before deleting
-		hasLink, err := dbClient.Ent().NarInfo.Query().
-			Where(entnarinfo.HasNarInfoNarFilesWith(
-				entnarinfonarfile.HasNarFileWith(
-					entnarfile.HashEQ(nf.Hash),
-					entnarfile.CompressionEQ(nf.Compression),
-					entnarfile.QueryEQ(nf.Query),
-				),
-			)).
-			Exist(ctx)
-		if err != nil {
-			return fmt.Errorf("repair re-verify nar_file(%d): %w", nf.ID, err)
-		}
-
-		if hasLink {
-			// Now has a narinfo link, skip
-			continue
-		}
-
-		if _, err := dbClient.Ent().NarFile.Delete().
-			Where(
-				entnarfile.HashEQ(nf.Hash),
-				entnarfile.CompressionEQ(nf.Compression),
-				entnarfile.QueryEQ(nf.Query),
-			).
-			Exec(ctx); err != nil {
-			logger.Error().Err(err).Int("nar_file_id", nf.ID).Msg("failed to delete orphaned nar_file")
-		} else {
-			logger.Info().Int("nar_file_id", nf.ID).Str("hash", nf.Hash).Msg("deleted orphaned nar_file from DB")
-		}
-	}
-
-	// c. Delete nar_file DB records missing from storage.
-	// Snapshot which narinfos are already orphaned before our deletions so we can
-	// distinguish pre-existing orphans (handled in section a) from narinfos that
-	// become orphaned as a cascade of removing the missing nar_file record.
-	existingOrphans, err := dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.Not(entnarinfo.HasNarInfoNarFiles())).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("repair pre-check GetNarInfosWithoutNarFiles: %w", err)
-	}
-
-	existingOrphanIDs := make(map[int]struct{}, len(existingOrphans))
-	for _, ni := range existingOrphans {
-		existingOrphanIDs[ni.ID] = struct{}{}
-	}
-
-	for _, nf := range results.narFilesMissingInStorage {
-		checked.Add(1)
-
-		// Re-verify before deleting
-		narURL, err := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
-		if err != nil {
-			return fmt.Errorf("narFileRowToURL for nar_file %d: %w", nf.ID, err)
-		}
-
-		if narStore.HasNar(ctx, narURL) {
-			// File appeared, skip
-			continue
-		}
-
-		if _, err := dbClient.Ent().NarFile.Delete().
-			Where(
-				entnarfile.HashEQ(nf.Hash),
-				entnarfile.CompressionEQ(nf.Compression),
-				entnarfile.QueryEQ(nf.Query),
-			).
-			Exec(ctx); err != nil {
-			logger.Error().Err(err).Int("nar_file_id", nf.ID).Msg("failed to delete nar_file missing from storage")
-		} else {
-			logger.Info().
-				Int("nar_file_id", nf.ID).
-				Str("hash", nf.Hash).
-				Msg("deleted nar_file DB record (missing from storage)")
-		}
-	}
-
-	// Delete narinfos that became orphaned as a result of the nar_file deletions above.
-	// These would otherwise only be caught on a second fsck run.
-	newOrphans, err := dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.Not(entnarinfo.HasNarInfoNarFiles())).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("repair post-check GetNarInfosWithoutNarFiles: %w", err)
-	}
-
-	for _, ni := range newOrphans {
-		if _, alreadyOrphaned := existingOrphanIDs[ni.ID]; alreadyOrphaned {
-			// Pre-existing orphan; handled in section a.
-			continue
-		}
-
-		if err := dbClient.Ent().NarInfo.DeleteOneID(ni.ID).Exec(ctx); err != nil {
-			logger.Error().Err(err).
-				Int("narinfo_id", ni.ID).
-				Msg("failed to delete narinfo orphaned by missing nar_file")
-		} else {
-			logger.Info().
-				Int("narinfo_id", ni.ID).
-				Str("hash", ni.Hash).
-				Msg("deleted narinfo orphaned by nar_file missing from storage")
-		}
-	}
-
-	// d. Delete orphaned NAR files from storage
-	type narDeleter interface {
-		DeleteNar(ctx context.Context, narURL nar.URL) error
-	}
-
-	nd, hasDeleter := narStore.(narDeleter)
-
-	for _, narURL := range results.orphanedNarFilesInStorage {
-		checked.Add(1)
-
-		// Re-verify before deleting
-		exists, err := dbClient.Ent().NarFile.Query().
-			Where(
-				entnarfile.HashEQ(narURL.Hash),
-				entnarfile.CompressionEQ(narURL.Compression.String()),
-				entnarfile.QueryEQ(narURL.Query.Encode()),
-			).
-			Exist(ctx)
-		if err != nil {
-			return fmt.Errorf("repair re-verify orphaned NAR (%s): %w", narURL, err)
-		}
-
-		if exists {
-			// Now in DB, skip
-			continue
-		}
-
-		if hasDeleter {
-			if err := nd.DeleteNar(ctx, narURL); err != nil {
-				logger.Error().Err(err).Str("nar_url", narURL.String()).Msg("failed to delete orphaned NAR from storage")
-			} else {
-				logger.Info().Str("nar_url", narURL.String()).Msg("deleted orphaned NAR from storage")
-			}
-		}
-	}
-
-	if !results.cdcMode || chunkStore == nil {
-		return nil
-	}
-
-	// e. Delete orphaned chunks in DB
-	recheckChunks, err := dbClient.Ent().Chunk.Query().
-		Where(entchunk.Not(entchunk.HasNarFileLinks())).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("repair re-verify GetOrphanedChunks: %w", err)
-	}
-
-	recheckMap := make(map[int]struct{}, len(recheckChunks))
-	for _, rc := range recheckChunks {
-		recheckMap[rc.ID] = struct{}{}
-	}
-
-	for _, c := range results.orphanedChunksInDB {
-		checked.Add(1)
-
-		if _, ok := recheckMap[c.ID]; !ok {
-			continue
-		}
-
-		if err := dbClient.Ent().Chunk.DeleteOneID(c.ID).Exec(ctx); err != nil {
-			logger.Error().Err(err).Int("chunk_id", c.ID).Msg("failed to delete orphaned chunk from DB")
-		} else {
-			logger.Info().Int("chunk_id", c.ID).Str("hash", c.Hash).Msg("deleted orphaned chunk from DB")
-		}
-	}
-
-	// f. Delete nar_files with chunk issues (broken CDC nar_files).
-	if chunkStore != nil {
-		if err := repairBrokenCDCNarFiles(ctx, dbClient, chunkStore, results.narFilesWithChunkIssues, logger); err != nil {
-			return err
-		}
-
-		checked.Add(int64(len(results.narFilesWithChunkIssues)))
-	}
-
-	// f2. Delete CDC nar_files with size mismatch (truncated artifacts).
-	if chunkStore != nil {
-		if err := repairSizeMismatchCDCNarFiles(
-			ctx, dbClient, chunkStore, results.narFilesWithSizeMismatch, logger,
-		); err != nil {
-			return err
-		}
-
-		checked.Add(int64(len(results.narFilesWithSizeMismatch)))
-	}
-
-	// f3. Delete CDC nar_files with corrupt chunk content.
-	if chunkStore != nil && results.verifyContent {
-		verifyCorrupt := func(ctx context.Context, nf *ent.NarFile) (bool, error) {
-			return isNarFileContentCorrupt(ctx, dbClient, chunkStore, nf)
-		}
-
-		if err := repairCDCNarFiles(
-			ctx, dbClient, chunkStore, results.narFilesWithCorruptChunks, verifyCorrupt, logger,
-		); err != nil {
-			return err
-		}
-
-		checked.Add(int64(len(results.narFilesWithCorruptChunks)))
-	}
-
-	// f4. Delete CDC nar_files with assembled NAR hash mismatch.
-	if chunkStore != nil && results.verifyContent {
-		verifyHash := func(ctx context.Context, nf *ent.NarFile) (bool, error) {
-			return isNarFileHashMismatched(ctx, dbClient, chunkStore, nf)
-		}
-
-		if err := repairCDCNarFiles(
-			ctx, dbClient, chunkStore, results.narFilesWithHashMismatch, verifyHash, logger,
-		); err != nil {
-			return err
-		}
-
-		checked.Add(int64(len(results.narFilesWithHashMismatch)))
-	}
-
-	// g. Delete orphaned chunk files from storage
-	if chunkStore != nil {
-		for _, hash := range results.orphanedChunksInStorage {
-			checked.Add(1)
-
-			// Re-verify before deleting
-			exists, err := dbClient.Ent().Chunk.Query().
-				Where(entchunk.HashEQ(hash)).
-				Exist(ctx)
-			if err != nil {
-				return fmt.Errorf("repair re-verify orphaned chunk (%s): %w", hash, err)
-			}
-
-			if exists {
-				// Now in DB, skip
-				continue
-			}
-
-			if err := chunkStore.DeleteChunk(ctx, hash); err != nil {
-				logger.Error().Err(err).Str("hash", hash).Msg("failed to delete orphaned chunk from storage")
-			} else {
-				logger.Info().Str("hash", hash).Msg("deleted orphaned chunk from storage")
-			}
-		}
-	}
-
-	// e2. Reclaim chunks stranded behind stale nar_file_chunks links to dechunked
-	// nar_files (total_chunks = 0). The orphaned-chunk (unlinked) reclamation above
-	// cannot reach them because they still carry a stale link.
-	if chunkStore != nil {
-		staleLinks, staleChunks, err := reclaimStaleChunkLinks(ctx, dbClient, chunkStore)
-		if err != nil {
-			return fmt.Errorf("reclaim stale chunk links: %w", err)
-		}
-
-		if staleLinks > 0 || staleChunks > 0 {
-			logger.Info().
-				Int("links", staleLinks).
-				Int("chunks", staleChunks).
-				Msg("reclaimed chunks stranded behind stale links to dechunked nar_files")
-		}
-	}
-
-	// f. Repair narinfos advertising a non-producible compression (xz) whose backing
-	// NAR is stored otherwise: rewrite to the servable none form so they serve via
-	// transparent decompression (#1392).
-	repairedCompression, err := repairNarInfoCompressionDesync(ctx, dbClient)
-	if err != nil {
-		return fmt.Errorf("repair narinfo compression desync: %w", err)
-	}
-
-	if repairedCompression > 0 {
-		logger.Info().
-			Int("count", repairedCompression).
-			Msg("repaired narinfos advertising a non-producible compression")
-	}
-
-	return nil
-}
-
 // reclaimStaleChunkLinks deletes nar_file_chunks links whose parent nar_file is
 // dechunked (total_chunks <= 0 and not actively chunking) — a dechunked NAR must
 // own no chunk links — and then reclaims the chunks left with no remaining links
@@ -2064,222 +1739,6 @@ func repairOneNarInfoCompressionDesync(ctx context.Context, dbClient *database.C
 	}
 
 	return true, nil
-}
-
-// repairBrokenCDCNarFiles deletes broken CDC nar_files, their orphaned narinfos, and orphaned chunks.
-func repairBrokenCDCNarFiles(
-	ctx context.Context,
-	dbClient *database.Client,
-	cs chunk.Store,
-	narFilesWithChunkIssues []*ent.NarFile,
-	logger *zerolog.Logger,
-) error {
-	verifyFn := func(ctx context.Context, nf *ent.NarFile) (bool, error) {
-		return isNarFileChunkBroken(ctx, dbClient, cs, nf)
-	}
-
-	return repairCDCNarFiles(ctx, dbClient, cs, narFilesWithChunkIssues, verifyFn, logger)
-}
-
-// repairCDCNarFiles deletes CDC nar_files that are confirmed broken by reVerifyFn,
-// then cascades to clean up orphaned narinfos and chunks.
-func repairCDCNarFiles(
-	ctx context.Context,
-	dbClient *database.Client,
-	cs chunk.Store,
-	narFiles []*ent.NarFile,
-	reVerifyFn func(ctx context.Context, nf *ent.NarFile) (bool, error),
-	logger *zerolog.Logger,
-) error {
-	// Snapshot pre-existing narinfo orphans so we only sweep newly orphaned ones below.
-	preExistingOrphans, err := dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.Not(entnarinfo.HasNarInfoNarFiles())).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("repair CDC pre-check GetNarInfosWithoutNarFiles: %w", err)
-	}
-
-	preExistingOrphanIDs := make(map[int]struct{}, len(preExistingOrphans))
-	for _, ni := range preExistingOrphans {
-		preExistingOrphanIDs[ni.ID] = struct{}{}
-	}
-
-	for _, nf := range narFiles {
-		broken, err := reVerifyFn(ctx, nf)
-		if err != nil {
-			return fmt.Errorf("repair re-verify nar_file(%d): %w", nf.ID, err)
-		}
-
-		if !broken {
-			continue
-		}
-
-		if _, err := dbClient.Ent().NarFile.Delete().
-			Where(
-				entnarfile.HashEQ(nf.Hash),
-				entnarfile.CompressionEQ(nf.Compression),
-				entnarfile.QueryEQ(nf.Query),
-			).
-			Exec(ctx); err != nil {
-			logger.Error().Err(err).Int("nar_file_id", nf.ID).Msg("failed to delete broken CDC nar_file")
-		} else {
-			logger.Info().Int("nar_file_id", nf.ID).Str("hash", nf.Hash).Msg("deleted broken CDC nar_file")
-		}
-	}
-
-	// Delete narinfos orphaned by the CDC nar_file deletions above.
-	newOrphans, err := dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.Not(entnarinfo.HasNarInfoNarFiles())).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("repair CDC post-check GetNarInfosWithoutNarFiles: %w", err)
-	}
-
-	for _, ni := range newOrphans {
-		if _, alreadyOrphaned := preExistingOrphanIDs[ni.ID]; alreadyOrphaned {
-			continue
-		}
-
-		if delErr := dbClient.Ent().NarInfo.DeleteOneID(ni.ID).Exec(ctx); delErr != nil {
-			logger.Error().Err(delErr).Int("narinfo_id", ni.ID).
-				Msg("failed to delete narinfo orphaned by broken CDC nar_file")
-		} else {
-			logger.Info().Int("narinfo_id", ni.ID).Str("hash", ni.Hash).
-				Msg("deleted narinfo orphaned by broken CDC nar_file")
-		}
-	}
-
-	// Clean up newly-orphaned chunks after nar_file deletions.
-	orphanedChunks, err := dbClient.Ent().Chunk.Query().
-		Where(entchunk.Not(entchunk.HasNarFileLinks())).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("repair post-CDC GetOrphanedChunks: %w", err)
-	}
-
-	for _, c := range orphanedChunks {
-		if err := cs.DeleteChunk(ctx, c.Hash); err != nil {
-			logger.Error().Err(err).Str("hash", c.Hash).Msg("failed to delete orphaned chunk from storage after CDC repair")
-		} else {
-			logger.Info().Str("hash", c.Hash).Msg("deleted orphaned chunk from storage after CDC repair")
-		}
-
-		if err := dbClient.Ent().Chunk.DeleteOneID(c.ID).Exec(ctx); err != nil {
-			logger.Error().Err(err).Int("chunk_id", c.ID).Msg("failed to delete orphaned chunk DB record after CDC repair")
-		} else {
-			logger.Info().Int("chunk_id", c.ID).Str("hash", c.Hash).Msg("deleted orphaned chunk DB record after CDC repair")
-		}
-	}
-
-	return nil
-}
-
-// repairSizeMismatchCDCNarFiles deletes CDC nar_files whose file_size does not match the
-// linked narinfo's nar_size (truncated artifacts). Re-verification is done via a fresh
-// GetCDCNarFilesWithSizeMismatch query rather than isNarFileChunkBroken, because
-// size-mismatched rows may otherwise pass the chunk-count check.
-func repairSizeMismatchCDCNarFiles(
-	ctx context.Context,
-	dbClient *database.Client,
-	cs chunk.Store,
-	narFilesWithSizeMismatch []*ent.NarFile,
-	logger *zerolog.Logger,
-) error {
-	if len(narFilesWithSizeMismatch) == 0 {
-		return nil
-	}
-
-	// Snapshot pre-existing narinfo orphans so we only sweep newly orphaned ones below.
-	preExistingOrphans, err := dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.Not(entnarinfo.HasNarInfoNarFiles())).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("repair size-mismatch pre-check GetNarInfosWithoutNarFiles: %w", err)
-	}
-
-	preExistingOrphanIDs := make(map[int]struct{}, len(preExistingOrphans))
-	for _, ni := range preExistingOrphans {
-		preExistingOrphanIDs[ni.ID] = struct{}{}
-	}
-
-	// Re-verify: re-run the mismatch query and build a set for O(1) lookup.
-	recheckMismatch, err := queryCDCNarFilesWithSizeMismatch(ctx, dbClient)
-	if err != nil {
-		return fmt.Errorf("repair size-mismatch re-verify GetCDCNarFilesWithSizeMismatch: %w", err)
-	}
-
-	recheckSet := make(map[int]struct{}, len(recheckMismatch))
-	for _, nf := range recheckMismatch {
-		recheckSet[nf.ID] = struct{}{}
-	}
-
-	for _, nf := range narFilesWithSizeMismatch {
-		if _, stillMismatched := recheckSet[nf.ID]; !stillMismatched {
-			continue
-		}
-
-		if _, err := dbClient.Ent().NarFile.Delete().
-			Where(
-				entnarfile.HashEQ(nf.Hash),
-				entnarfile.CompressionEQ(nf.Compression),
-				entnarfile.QueryEQ(nf.Query),
-			).
-			Exec(ctx); err != nil {
-			logger.Error().Err(err).Int("nar_file_id", nf.ID).Msg("failed to delete size-mismatched CDC nar_file")
-		} else {
-			logger.Info().Int("nar_file_id", nf.ID).Str("hash", nf.Hash).Msg("deleted size-mismatched CDC nar_file")
-		}
-	}
-
-	// Delete narinfos orphaned by the deletions above.
-	newOrphans, err := dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.Not(entnarinfo.HasNarInfoNarFiles())).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("repair size-mismatch post-check GetNarInfosWithoutNarFiles: %w", err)
-	}
-
-	for _, ni := range newOrphans {
-		if _, alreadyOrphaned := preExistingOrphanIDs[ni.ID]; alreadyOrphaned {
-			continue
-		}
-
-		if delErr := dbClient.Ent().NarInfo.DeleteOneID(ni.ID).Exec(ctx); delErr != nil {
-			logger.Error().Err(delErr).Int("narinfo_id", ni.ID).
-				Msg("failed to delete narinfo orphaned by size-mismatched CDC nar_file")
-		} else {
-			logger.Info().Int("narinfo_id", ni.ID).Str("hash", ni.Hash).
-				Msg("deleted narinfo orphaned by size-mismatched CDC nar_file")
-		}
-	}
-
-	// Clean up newly-orphaned chunks after nar_file deletions.
-	orphanedChunks, err := dbClient.Ent().Chunk.Query().
-		Where(entchunk.Not(entchunk.HasNarFileLinks())).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("repair size-mismatch GetOrphanedChunks: %w", err)
-	}
-
-	for _, c := range orphanedChunks {
-		if err := cs.DeleteChunk(ctx, c.Hash); err != nil {
-			logger.Error().Err(err).Str("hash", c.Hash).
-				Msg("failed to delete orphaned chunk from storage after size-mismatch repair")
-		} else {
-			logger.Info().Str("hash", c.Hash).
-				Msg("deleted orphaned chunk from storage after size-mismatch repair")
-		}
-
-		if err := dbClient.Ent().Chunk.DeleteOneID(c.ID).Exec(ctx); err != nil {
-			logger.Error().Err(err).Int("chunk_id", c.ID).
-				Msg("failed to delete orphaned chunk DB record after size-mismatch repair")
-		} else {
-			logger.Info().Int("chunk_id", c.ID).Str("hash", c.Hash).
-				Msg("deleted orphaned chunk DB record after size-mismatch repair")
-		}
-	}
-
-	return nil
 }
 
 // chunksForNarFile returns the chunk rows linked to nf via nar_file_chunks,
