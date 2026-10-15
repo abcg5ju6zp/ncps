@@ -16,6 +16,14 @@ analytics:
     # Enable reporting anonymous usage statistics (DB type, Lock type, Total Size)
     # to the project maintainers
     enabled: true
+
+    # Directory of the durable on-disk queue. Batches are persisted here before
+    # being sent and only removed once the collector acknowledges them.
+    queue:
+      dir: "/var/lib/ncps/analytics-queue"
+      # Maximum on-disk size of the queue (B, K, M, G, T). When full, normal
+      # samples are dropped first; the most recent panic record is always kept.
+      max_size: "64M"
 # OpenTelemetry support.
 opentelemetry:
   enabled: true

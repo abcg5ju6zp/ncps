@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"time"
@@ -15,7 +16,9 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	entnarfile "github.com/kalbasit/ncps/ent/narfile"
@@ -25,6 +28,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/kalbasit/ncps/ent"
+	"github.com/kalbasit/ncps/pkg/analytics/queue"
 	"github.com/kalbasit/ncps/pkg/database"
 )
 
@@ -38,6 +42,20 @@ const (
 	instrumentationName = "github.com/kalbasit/ncps/pkg/analytics"
 
 	panicLogMessage = "Application panic recovered"
+
+	// panicEnqueueTimeout bounds how long a recovered panic goroutine waits
+	// for its last record to reach the durable queue.
+	panicEnqueueTimeout = 2 * time.Second
+
+	// providerShutdownTimeout bounds flushing SDK buffers into the queue.
+	providerShutdownTimeout = 5 * time.Second
+
+	// flushTimeout bounds draining queued batches to the collector during
+	// shutdown; unacknowledged batches stay on disk for the next start.
+	flushTimeout = 5 * time.Second
+
+	// networkShutdownTimeout bounds closing OTLP exporters after flushing.
+	networkShutdownTimeout = 3 * time.Second
 )
 
 //nolint:gochecknoglobals
@@ -45,6 +63,7 @@ var ctxKey = &struct{}{}
 
 type shutdownFn func(context.Context) error
 
+// Reporter is the analytics reporting surface.
 type Reporter interface {
 	GetLogger() log.Logger
 	GetMeter() metric.Meter
@@ -63,12 +82,15 @@ func (nr nopReporter) GetMeter() metric.Meter {
 	return noopmetric.NewMeterProvider().Meter("noop")
 }
 
+// LogPanic records the panic in the local logs even when analytics is off.
 func (nr nopReporter) LogPanic(ctx context.Context, rvr any, stack []byte) {
 	// The nop reporter is not supposed to send metrics or logs but it's still
 	// important to log panics.
 	logPanicToZerolog(ctx, rvr, stack)
 }
-func (nr nopReporter) Shutdown(context.Context) error                  { return nil }
+
+func (nr nopReporter) Shutdown(context.Context) error { return nil }
+
 func (nr nopReporter) WithContext(ctx context.Context) context.Context { return ctx }
 
 type reporter struct {
@@ -78,42 +100,75 @@ type reporter struct {
 	logger log.Logger
 	meter  metric.Meter
 
+	reportingSamples bool
+
+	// shutdownFns is only used by the stdout samples pipeline.
 	shutdownFns map[string]shutdownFn
 
-	reportingSamples bool
+	// Durable pipeline fields; all nil in samples mode.
+	spool             *queue.Queue
+	senders           *senders
+	providerShutdowns []shutdownFn
+	networkShutdowns  []shutdownFn
+
+	// Shutdown deadlines, overridable in tests.
+	providerShutdownTimeout time.Duration
+	flushDrainTimeout       time.Duration
+	networkShutdownTimeout  time.Duration
 }
 
 // New initializes the analytics reporting pipeline.
-// It returns a shutdown function that should be called when the application exits.
+//
+// In samples mode analytics events are printed to stdout and no queue or
+// network client is created. Otherwise every batch is assigned a stable
+// identity, persisted in queueDir first and delivered to the OTLP endpoint
+// in the background with bounded retries.
+//
+// It returns a shutdown function that should be called when the application
+// exits.
 func New(
 	ctx context.Context,
 	dbClient *database.Client,
 	res *resource.Resource,
 	reportingSamples bool,
+	queueDir string,
+	queueMaxBytes int64,
 ) (Reporter, error) {
 	r := &reporter{
-		dbClient:         dbClient,
-		res:              res,
-		shutdownFns:      make(map[string]shutdownFn),
-		reportingSamples: reportingSamples,
+		dbClient:                dbClient,
+		res:                     res,
+		shutdownFns:             make(map[string]shutdownFn),
+		reportingSamples:        reportingSamples,
+		providerShutdownTimeout: providerShutdownTimeout,
+		flushDrainTimeout:       flushTimeout,
+		networkShutdownTimeout:  networkShutdownTimeout,
 	}
 
-	if err := r.newLogger(ctx); err != nil {
-		return nil, err
-	}
+	if reportingSamples {
+		if err := r.newSamplesPipeline(); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := r.newDurablePipeline(ctx, queueDir, queueMaxBytes); err != nil {
+			return nil, err
+		}
 
-	if err := r.newMeter(ctx); err != nil {
-		return nil, err
+		if err := r.registerMeterCallbacks(r.meter); err != nil {
+			return nil, err
+		}
 	}
 
 	zerolog.Ctx(ctx).
 		Info().
 		Str("endpoint", DefaultEndpoint).
+		Bool("samples", reportingSamples).
+		Bool("durable_queue", !reportingSamples).
 		Msg("Reporting anonymous metrics to the project maintainers")
 
 	return r, nil
 }
 
+// Ctx returns the reporter stored in ctx, or a no-op reporter.
 func Ctx(ctx context.Context) Reporter {
 	r, ok := ctx.Value(ctxKey).(*reporter)
 	if !ok || r == nil {
@@ -123,6 +178,7 @@ func Ctx(ctx context.Context) Reporter {
 	return r
 }
 
+// SafeGo runs fn in a goroutine and reports recovered panics.
 func SafeGo(ctx context.Context, fn func()) {
 	go func() {
 		defer func() {
@@ -151,13 +207,134 @@ func (r *reporter) LogPanic(ctx context.Context, rvr any, stack []byte) {
 		attribute.String("panic.stack", string(stack)),
 	)
 
-	r.logger.Emit(ctx, record)
+	emitCtx := ctx
+
+	var cancel context.CancelFunc
+
+	if r.spool != nil {
+		// A recovered panic must never block indefinitely: detach from
+		// shutdown cancellation but cap the wait, while preserving trace
+		// linkage captured in the original context.
+		emitCtx = context.WithoutCancel(ctx)
+
+		if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+			emitCtx = trace.ContextWithSpanContext(emitCtx, sc)
+		}
+
+		emitCtx, cancel = context.WithTimeout(emitCtx, panicEnqueueTimeout)
+		defer cancel()
+	}
+
+	r.logger.Emit(emitCtx, record)
 
 	// Log the panic in the application logs.
 	logPanicToZerolog(ctx, rvr, stack)
 }
 
+// Shutdown stops accepting new events, flushes queued batches within the
+// configured deadlines and leaves unacknowledged batches on disk for the
+// next start.
 func (r *reporter) Shutdown(ctx context.Context) error {
+	if r.spool == nil {
+		return r.shutdownSamplesPipeline(ctx)
+	}
+
+	bg := context.WithoutCancel(ctx)
+	logger := *zerolog.Ctx(ctx)
+
+	if err := r.runShutdowns(bg, r.providerShutdowns, r.providerShutdownTimeout); err != nil {
+		logger.Error().Err(err).Msg("analytics: error flushing telemetry providers")
+	}
+
+	flushCtx, flushCancel := context.WithTimeout(bg, r.flushDrainTimeout)
+	defer flushCancel()
+
+	switch err := r.spool.Drain(flushCtx); {
+	case err == nil:
+		logger.Info().Msg("analytics: queued batches fully flushed before shutdown")
+	case errors.Is(err, context.DeadlineExceeded):
+		stats := r.spool.Stats()
+		logger.Warn().
+			Err(err).
+			Int("pending_logs", stats.Pending[queue.KindLogs]).
+			Int("pending_metrics", stats.Pending[queue.KindMetrics]).
+			Msg("analytics: shutdown deadline reached; unacknowledged batches kept on disk")
+	default:
+		logger.Error().Err(err).Msg("analytics: error draining the durable queue")
+	}
+
+	// Stop the senders before closing the network exporters they use.
+	r.spool.Close()
+	r.senders.stop()
+
+	netErr := r.runShutdowns(bg, r.networkShutdowns, r.networkShutdownTimeout)
+	if netErr != nil {
+		logger.Error().Err(netErr).Msg("analytics: error closing OTLP exporters")
+	}
+
+	r.logFinalStats(logger)
+
+	return netErr
+}
+
+func (r *reporter) WithContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKey, r)
+}
+
+// newSamplesPipeline wires analytics logs and metrics to stdout.
+func (r *reporter) newSamplesPipeline() error {
+	if err := r.newStdoutLogger(); err != nil {
+		return err
+	}
+
+	return r.newStdoutMeter()
+}
+
+// newStdoutLogger wires analytics logs to stdout for the samples mode.
+func (r *reporter) newStdoutLogger() error {
+	exporter, err := stdoutlog.New()
+	if err != nil {
+		return fmt.Errorf("failed to create analytics log exporter: %w", err)
+	}
+
+	logProvider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(r.res),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
+	)
+
+	r.shutdownFns["logger"] = logProvider.Shutdown
+	r.logger = logProvider.Logger(instrumentationName)
+
+	return nil
+}
+
+// newStdoutMeter wires analytics metrics to stdout for the samples mode.
+func (r *reporter) newStdoutMeter() error {
+	exporter, err := stdoutmetric.New()
+	if err != nil {
+		return fmt.Errorf("failed to create analytics metric exporter: %w", err)
+	}
+
+	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(r.res),
+		sdkmetric.WithReader(
+			sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(metricInterval)),
+		),
+	)
+
+	r.shutdownFns["meter"] = meterProvider.Shutdown
+
+	meter := meterProvider.Meter(instrumentationName)
+	if err := r.registerMeterCallbacks(meter); err != nil {
+		return err
+	}
+
+	r.meter = meter
+
+	return nil
+}
+
+func (r *reporter) shutdownSamplesPipeline(ctx context.Context) error {
 	var g errgroup.Group
 
 	for name, sfn := range r.shutdownFns {
@@ -179,77 +356,129 @@ func (r *reporter) Shutdown(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (r *reporter) WithContext(ctx context.Context) context.Context {
-	return context.WithValue(ctx, ctxKey, r)
-}
-
-func (r *reporter) newLogger(ctx context.Context) error {
-	var (
-		exporter sdklog.Exporter
-		err      error
-	)
-	if r.reportingSamples {
-		exporter, err = stdoutlog.New()
-	} else {
-		exporter, err = otlploghttp.New(
-			ctx,
-			otlploghttp.WithEndpoint(DefaultEndpoint),
-			otlploghttp.WithCompression(otlploghttp.GzipCompression),
-		)
+// newDurablePipeline builds the persistent-queue-backed OTLP pipeline.
+func (r *reporter) newDurablePipeline(
+	ctx context.Context,
+	queueDir string,
+	queueMaxBytes int64,
+) error {
+	spool, err := queue.Open(ctx, queueDir, queue.Options{
+		MaxBytes: queueMaxBytes,
+	})
+	if err != nil {
+		return fmt.Errorf("opening analytics durable queue: %w", err)
 	}
 
+	logExporter, err := otlploghttp.New(
+		ctx,
+		otlploghttp.WithEndpoint(DefaultEndpoint),
+		otlploghttp.WithCompression(otlploghttp.GzipCompression),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create analytics log exporter: %w", err)
 	}
 
-	logProvider := sdklog.NewLoggerProvider(
-		sdklog.WithResource(r.res),
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
+	metricExporter, err := otlpmetrichttp.New(
+		ctx,
+		otlpmetrichttp.WithEndpoint(DefaultEndpoint),
+		otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),
 	)
-
-	r.shutdownFns["logger"] = logProvider.Shutdown
-
-	r.logger = logProvider.Logger(instrumentationName)
-
-	return nil
-}
-
-func (r *reporter) newMeter(ctx context.Context) error {
-	var (
-		exporter sdkmetric.Exporter
-		err      error
-	)
-	if r.reportingSamples {
-		exporter, err = stdoutmetric.New()
-	} else {
-		exporter, err = otlpmetrichttp.New(
-			ctx,
-			otlpmetrichttp.WithEndpoint(DefaultEndpoint),
-			otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),
-		)
-	}
-
 	if err != nil {
 		return fmt.Errorf("failed to create analytics metric exporter: %w", err)
 	}
 
-	meterProvider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(r.res),
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(metricInterval))),
+	// Replay-side logger provider: re-emitted records regain their resource
+	// and instrumentation scope through it.
+	replayLogProvider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(r.res),
+		sdklog.WithProcessor(sdklog.NewSimpleProcessor(&capturingExporter{
+			inner: logExporter,
+		})),
 	)
 
-	r.shutdownFns["meter"] = meterProvider.Shutdown
-
-	// Register the Metrics
-	meter := meterProvider.Meter(instrumentationName)
-	if err := r.registerMeterCallbacks(meter); err != nil {
-		return err
+	sender := &otlpBatchSender{
+		logs: replayLogger{logger: replayLogProvider.Logger(instrumentationName)},
+		metrics: &metricReplayer{
+			exporter: metricExporter,
+			res:      r.res,
+		},
 	}
 
-	r.meter = meter
+	r.networkShutdowns = []shutdownFn{
+		logExporter.Shutdown,
+		metricExporter.Shutdown,
+	}
+
+	return r.wireDurablePipelineWithConfig(ctx, spool, sender, senderConfig{})
+}
+
+func (r *reporter) wireDurablePipelineWithConfig(
+	ctx context.Context,
+	spool *queue.Queue,
+	sender batchSender,
+	cfg senderConfig,
+) error {
+	durableLogs := &durableLogExporter{spool: spool}
+	logProvider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(r.res),
+		sdklog.WithProcessor(sdklog.NewSimpleProcessor(durableLogs)),
+	)
+
+	durableMetrics := &durableMetricExporter{
+		spool: spool,
+		inner: senderMetricSelector(sender),
+	}
+
+	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(r.res),
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
+			durableMetrics,
+			sdkmetric.WithInterval(metricInterval),
+		)),
+	)
+
+	r.logger = logProvider.Logger(instrumentationName)
+	r.meter = meterProvider.Meter(instrumentationName)
+	r.spool = spool
+	r.senders = startSendersWith(ctx, spool, sender, cfg)
+	r.providerShutdowns = append(r.providerShutdowns,
+		logProvider.Shutdown,
+		meterProvider.Shutdown,
+	)
 
 	return nil
 }
+
+// senderMetricSelector returns the exporter used to answer temporality and
+// aggregation queries. Only the real OTLP sender carries one; test senders
+// get the SDK defaults through a nil-safe wrapper.
+func senderMetricSelector(sender batchSender) sdkmetric.Exporter {
+	if realSender, ok := sender.(*otlpBatchSender); ok {
+		return realSender.metrics.exporter
+	}
+
+	return defaultMetricSelector{}
+}
+
+// defaultMetricSelector answers temporality/aggregation queries with the OTLP
+// defaults (cumulative, default aggregation) for non-OTLP senders.
+type defaultMetricSelector struct{}
+
+func (defaultMetricSelector) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.CumulativeTemporality
+}
+
+func (defaultMetricSelector) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.AggregationDefault{}
+}
+
+func (defaultMetricSelector) Export(context.Context, *metricdata.ResourceMetrics) error {
+	return nil
+}
+
+func (defaultMetricSelector) ForceFlush(context.Context) error { return nil }
+
+func (defaultMetricSelector) Shutdown(context.Context) error { return nil }
 
 func (r *reporter) registerMeterCallbacks(meter metric.Meter) error {
 	return r.registerMeterTotalSizeGaugeCallback(meter)
@@ -305,6 +534,41 @@ func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error
 	}
 
 	return nil
+}
+
+func (r *reporter) runShutdowns(
+	parent context.Context,
+	fns []shutdownFn,
+	timeout time.Duration,
+) error {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+
+	var g errgroup.Group
+
+	for _, sfn := range fns {
+		g.Go(func() error { return sfn(ctx) })
+	}
+
+	return g.Wait()
+}
+
+func (r *reporter) logFinalStats(logger zerolog.Logger) {
+	if r.spool == nil {
+		return
+	}
+
+	s := r.spool.Stats()
+
+	logger.Info().
+		Int("pending_logs", s.Pending[queue.KindLogs]).
+		Int("pending_metrics", s.Pending[queue.KindMetrics]).
+		Int64("queue_bytes", s.TotalBytes).
+		Int("quarantined", s.Quarantined).
+		Int64("dropped_normal", s.DroppedNormal).
+		Int64("dropped_panic", s.DroppedPanic).
+		Int64("write_failures", s.WriteFailures).
+		Msg("analytics: durable queue status at shutdown")
 }
 
 func logPanicToZerolog(ctx context.Context, rvr any, stack []byte) {

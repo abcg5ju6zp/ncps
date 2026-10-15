@@ -85,6 +85,66 @@ This endpoint receives OpenTelemetry data over HTTPS using:
 - **gzip compression** to minimize bandwidth
 - **TLS encryption** for secure transmission
 
+## Durable Local Queue
+
+Every analytics batch is assigned a stable, time-sortable identity and written
+to a local on-disk queue **before** the producing request completes. A
+background sender delivers the batches to the endpoint and removes a file only
+after the collector explicitly accepts it.
+
+Properties of the queue:
+
+- **Durable across restarts and crashes** - unacknowledged batches stay on disk
+  and are replayed on the next start.
+- **Bounded retries** - while the endpoint is unreachable, batches are retried
+  with an exponential backoff (1s start, 5m cap, jitter).
+- **Per-stream ordering** - logs and metrics keep independent FIFO order; the
+  oldest failed batch blocks later batches until accepted.
+- **Self-healing** - corrupt envelope files are moved to a `quarantine/`
+  directory at startup so they cannot block delivery of the remaining batches.
+- **Bounded disk use** - the queue caps at 64 MiB / 10,000 batches by default.
+  When the cap is reached or the disk is full, the **oldest normal samples are
+  dropped first**; panic records are dropped only as a last resort, and the
+  **most recent panic record is always retained**. Every drop and quarantine
+  is reported in the local logs and in the queue status logged at shutdown.
+- **Graceful shutdown** - on `SIGINT`/`SIGTERM` ncps stops accepting new
+  events, flushes queued batches within a deadline, and leaves anything
+  unacknowledged on disk for the next start.
+- **Panics are best-effort durable** - a recovered panic waits at most 2
+  seconds for its record to reach disk; it is always logged locally even if
+  the queue cannot accept it.
+
+The queue lives at `~/.ncps/analytics-queue` by default and is only created
+when analytics reporting (non-samples mode) is enabled. Disable analytics and
+no queue directory or network client is created.
+
+### Queue Configuration
+
+**Command-line:**
+
+```sh
+ncps serve \
+  --analytics-reporting-queue-dir=/var/lib/ncps/analytics-queue \
+  --analytics-reporting-queue-max-size=64M
+```
+
+**Configuration file:**
+
+```yaml
+analytics:
+  reporting:
+    queue:
+      dir: /var/lib/ncps/analytics-queue
+      max_size: 64M
+```
+
+**Environment variables:**
+
+```sh
+export ANALYTICS_REPORTING_QUEUE_DIR=/var/lib/ncps/analytics-queue
+export ANALYTICS_REPORTING_QUEUE_MAX_SIZE=64M
+```
+
 ## Privacy and Security
 
 ### Data Retention
@@ -372,9 +432,13 @@ No. Analytics has negligible performance impact:
 
 If `otlp.ncps.dev` is unreachable:
 
-- ncps logs a warning but continues operating
-- No retries or queuing (to avoid memory buildup)
-- Analytics automatically resumes when endpoint is available
+- ncps logs a warning but continues operating normally
+- Batches remain safe in the durable on-disk queue and are retried with a
+  bounded exponential backoff; see "Durable Local Queue" above
+- Analytics automatically resumes when the endpoint is available, preserving
+  the original ordering of logs and metrics
+- No data accumulates in process memory: everything unacknowledged lives on
+  disk within the configured queue cap
 
 ### Can I host my own analytics collector?
 

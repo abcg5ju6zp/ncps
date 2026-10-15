@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -702,11 +704,21 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 				return err
 			}
 
+			queueMaxSize, err := helper.ParseSize(cmd.String("analytics-reporting-queue-max-size"))
+			if err != nil {
+				return fmt.Errorf("error parsing analytics queue max size: %w", err)
+			}
+
+			//nolint:gosec // queue sizes are bounded by local disk capacity, far below MaxInt64.
+			queueMaxSizeInt := int64(queueMaxSize)
+
 			analyticsReporter, err = analytics.New(
 				ctx,
 				dbClient,
 				analyticsResource,
 				cmd.Bool("analytics-reporting-samples"),
+				cmd.String("analytics-reporting-queue-dir"),
+				queueMaxSizeInt,
 			)
 			if err != nil {
 				zerolog.Ctx(ctx).
@@ -761,18 +773,43 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 		srv.SetGetToken(cmd.String("cache-get-token"))
 		srv.SetPutPermitted(cmd.Bool("cache-allow-put-verb"))
 
-		server := &http.Server{
+		httpServer := &http.Server{
 			BaseContext:       func(net.Listener) context.Context { return ctx },
 			Addr:              cmd.String("server-addr"),
 			Handler:           srv,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 
+		// Gracefully drain on termination signals so registered shutdown
+		// hooks (including the durable analytics queue flush) can run.
+		sigCtx, stopSignals := signal.NotifyContext(
+			ctx,
+			syscall.SIGINT,
+			syscall.SIGTERM,
+		)
+		defer stopSignals()
+
+		go func() {
+			<-sigCtx.Done()
+
+			shutdownCtx, cancel := context.WithTimeout(
+				context.WithoutCancel(ctx),
+				10*time.Second,
+			)
+			defer cancel()
+
+			logger.Info().Msg("shutdown signal received, draining the HTTP server")
+
+			if err := httpServer.Shutdown(shutdownCtx); err != nil {
+				logger.Error().Err(err).Msg("error shutting down the HTTP server")
+			}
+		}()
+
 		logger.Info().
 			Str("server_addr", cmd.String("server-addr")).
 			Msg("Server started")
 
-		if err := server.ListenAndServe(); err != nil {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("error starting the HTTP listener: %w", err)
 		}
 

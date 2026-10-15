@@ -21,6 +21,7 @@ import (
 
 	altsrc "github.com/urfave/cli-altsrc/v3"
 
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/otelzerolog"
 	"github.com/kalbasit/ncps/pkg/xz"
 )
@@ -201,11 +202,35 @@ func New() (*cli.Command, error) {
 				Value:   true,
 			},
 			&cli.BoolFlag{
-				Name: "analytics-reporting-samples",
-				//nolint:lll
-				Usage: "Enable printing the analytics samples to stdout. This is useful for debugging and verification purposes only.",
-				Value: false,
+			Name:    "analytics-reporting-samples",
+			//nolint:lll
+			Usage: "Enable printing the analytics samples to stdout. This is useful for debugging and verification purposes only.",
+			Value: false,
+		},
+		&cli.StringFlag{
+			Name: "analytics-reporting-queue-dir",
+			Usage: "Directory used to durably spool analytics batches until the collector accepts them",
+			Value: filepath.Join(userDirs.homeDir, ".ncps", "analytics-queue"),
+			Sources: flagSources(
+				"analytics.reporting.queue.dir",
+				"ANALYTICS_REPORTING_QUEUE_DIR",
+			),
+		},
+		&cli.StringFlag{
+			Name: "analytics-reporting-queue-max-size",
+			Usage: "Maximum on-disk size of the durable analytics queue (B, K, M, G, T). " +
+				"When full, normal samples are dropped first; the latest panic record is always kept",
+			Value: "64M",
+			Sources: flagSources(
+				"analytics.reporting.queue.max_size",
+				"ANALYTICS_REPORTING_QUEUE_MAX_SIZE",
+			),
+			Validator: func(s string) error {
+				_, err := helper.ParseSize(s)
+
+				return err
 			},
+		},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "Set the log level",
