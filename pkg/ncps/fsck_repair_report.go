@@ -146,16 +146,16 @@ func printFsckRepairReport(w io.Writer, r *fsckRepairReport) {
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "ncps fsck repair batch — %s\n", statusLine)
 	fmt.Fprintln(w, "Batch "+r.batchUID+map[bool]string{true: " (resumed)", false: ""}[r.resumed])
-	fmt.Fprintln(w, border("╔", "╦", "╗", "═"))
+	fmt.Fprintln(w, border("╔", "╦", "╗"))
 	fmt.Fprintf(w, "║ %-*s ║ %5s ║ %5s ║ %5s ║ %5s ║ %5s ║\n",
 		longestLabel, "Issue type", "done", "skip", "fail", "retry", "pend")
-	fmt.Fprintln(w, border("╠", "╬", "╣", "═"))
+	fmt.Fprintln(w, border("╠", "╬", "╣"))
 
 	for _, t := range rows {
 		fmt.Fprintln(w, dataLine(t.label, t.done, t.skipped, t.failed, t.retry, t.pending))
 	}
 
-	fmt.Fprintln(w, border("╠", "╬", "╣", "═"))
+	fmt.Fprintln(w, border("╠", "╬", "╣"))
 	fmt.Fprintln(w, dataLine("TOTAL",
 		r.counts[repairItemStatusDone],
 		r.counts[repairItemStatusSkipped],
@@ -163,7 +163,7 @@ func printFsckRepairReport(w io.Writer, r *fsckRepairReport) {
 		r.counts[repairItemStatusRetryPending],
 		r.counts[repairItemStatusPending]+r.counts[repairItemStatusInProgress],
 	))
-	fmt.Fprintln(w, border("╚", "╩", "╝", "═"))
+	fmt.Fprintln(w, border("╚", "╩", "╝"))
 
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "Total objects: %d\n", r.total)
