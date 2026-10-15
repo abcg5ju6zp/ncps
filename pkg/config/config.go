@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,6 +30,12 @@ const (
 	KeyCDCAvg = "cdc_avg"
 	// KeyCDCMax is the key for CDC maximum chunk size in the configuration database.
 	KeyCDCMax = "cdc_max"
+	// KeyKeyRotationState is the key for the signing-key rotation state
+	// (JSON document, see pkg/keyrotation) in the configuration database.
+	KeyKeyRotationState = "key_rotation_state"
+	// KeyKeyRotationRetiredPublicKeys is the key for the JSON array of
+	// public keys retired by completed signing-key rotations.
+	KeyKeyRotationRetiredPublicKeys = "key_rotation_retired_public_keys"
 
 	// lockKeyPrefix is the prefix used for locking configuration keys.
 	lockKeyPrefix = "config_"
@@ -84,6 +91,70 @@ func (c *Config) GetSecretKey(ctx context.Context) (string, error) {
 // SetSecretKey stores the secret key in the configuration.
 func (c *Config) SetSecretKey(ctx context.Context, value string) error {
 	return c.setConfig(ctx, KeySecretKey, value)
+}
+
+// GetKeyRotationState returns the raw JSON signing-key rotation state.
+// It returns ErrConfigNotFound when no rotation is in progress.
+func (c *Config) GetKeyRotationState(ctx context.Context) (string, error) {
+	return c.getConfig(ctx, KeyKeyRotationState)
+}
+
+// SetKeyRotationState stores the raw JSON signing-key rotation state.
+func (c *Config) SetKeyRotationState(ctx context.Context, value string) error {
+	return c.setConfig(ctx, KeyKeyRotationState, value)
+}
+
+// DeleteKeyRotationState removes the signing-key rotation state row. It is
+// not an error when the row is already absent (e.g. two replicas retiring
+// concurrently).
+func (c *Config) DeleteKeyRotationState(ctx context.Context) error {
+	return c.deleteConfig(ctx, KeyKeyRotationState)
+}
+
+// GetRetiredPublicKeys returns the public keys retired by completed
+// rotations, oldest first. An empty slice and no error is returned when no
+// rotation has ever completed.
+func (c *Config) GetRetiredPublicKeys(ctx context.Context) ([]string, error) {
+	raw, err := c.getConfig(ctx, KeyKeyRotationRetiredPublicKeys)
+	if err != nil {
+		if errors.Is(err, ErrConfigNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	var keys []string
+	if err := json.Unmarshal([]byte(raw), &keys); err != nil {
+		return nil, fmt.Errorf("error decoding retired public keys: %w", err)
+	}
+
+	return keys, nil
+}
+
+// AddRetiredPublicKey appends publicKey to the retired-key list, preserving
+// order and de-duplicating so completing the same rotation twice does not
+// record the key twice.
+func (c *Config) AddRetiredPublicKey(ctx context.Context, publicKey string) error {
+	keys, err := c.GetRetiredPublicKeys(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, k := range keys {
+		if k == publicKey {
+			return nil
+		}
+	}
+
+	keys = append(keys, publicKey)
+
+	raw, err := json.Marshal(keys)
+	if err != nil {
+		return fmt.Errorf("error encoding retired public keys: %w", err)
+	}
+
+	return c.setConfig(ctx, KeyKeyRotationRetiredPublicKeys, string(raw))
 }
 
 // GetCDCEnabled returns the CDC enabled flag from the configuration.

@@ -48,6 +48,19 @@ type BuildTraceValue = buildTraceValue
 // BuildTraceSig is a test-only re-export.
 type BuildTraceSig = buildTraceSig
 
+// RunKeyRotationPassForTest runs a single signing-key rotation re-sign
+// sweep synchronously, the body of the background worker tick.
+func (c *Cache) RunKeyRotationPassForTest(ctx context.Context) error {
+	return c.runKeyRotationPass(ctx)
+}
+
+// KeyRotationActiveForTest reports whether the node holds a rotation.
+func (c *Cache) KeyRotationActiveForTest() bool {
+	state, _ := c.rotationSnapshot()
+
+	return state != nil
+}
+
 // SetChunker is a test-only export to inject a custom chunker implementation.
 func (c *Cache) SetChunker(ch chunker.Chunker) {
 	c.cdcMu.Lock()

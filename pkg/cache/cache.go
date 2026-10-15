@@ -48,6 +48,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/keyrotation"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
@@ -157,6 +158,13 @@ var (
 
 	// ErrNarInfoPurged is returned if the narinfo was purged.
 	ErrNarInfoPurged = errors.New("the narinfo was purged")
+
+	// ErrNarInfoUnverifiable is returned while a signing-key rotation is
+	// active when a narinfo carries no signature that validates against the
+	// current key, the previous-generation key, or any configured trusted
+	// third-party key. Such an object MUST NOT be served. The read path
+	// resolves it like a miss (upstream re-pull, 404 upload-only).
+	ErrNarInfoUnverifiable = errors.New("narinfo has no verifiable trusted signature")
 
 	// ErrCDCDisabled is returned when CDC is required but not enabled.
 	ErrCDCDisabled = errors.New("CDC must be enabled and chunk store configured for migration")
@@ -269,6 +277,13 @@ var (
 
 	//nolint:gochecknoglobals // package-level OTel metric instrument, initialized once in init() and reused.
 	storageStatInFlight metric.Int64UpDownCounter
+
+	// Signing-key rotation metrics.
+	//nolint:gochecknoglobals // package-level OTel metric instrument, initialized once in init() and reused.
+	keyRotationEventsTotal metric.Int64Counter
+
+	//nolint:gochecknoglobals // package-level OTel metric instrument, initialized once in init() and reused.
+	keyRotationNarInfoTotal metric.Int64Counter
 )
 
 //nolint:gochecknoinits
@@ -479,6 +494,26 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+
+	keyRotationEventsTotal, err = meter.Int64Counter(
+		"ncps_key_rotation_events_total",
+		metric.WithDescription("Counts signing-key rotation lifecycle events."),
+		metric.WithUnit("{event}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	keyRotationNarInfoTotal, err = meter.Int64Counter(
+		"ncps_key_rotation_narinfo_total",
+		metric.WithDescription(
+			"Counts narinfos handled during signing-key rotation, by path and result.",
+		),
+		metric.WithUnit("{narinfo}"),
+	)
+	if err != nil {
+		panic(err)
+	}
 }
 
 // PrimeMetrics records a zero-valued measurement on every counter instrument in
@@ -568,6 +603,21 @@ type Cache struct {
 	// upload-trust must be configured separately. Consulted by
 	// verifyNarInfoTrusted only when requireTrustedSignature is true.
 	trustedUploadKeys []signature.PublicKey
+
+	// Signing-key rotation state. See pkg/keyrotation. keyRotationState is
+	// nil when no rotation is in progress (idle node, single-key behavior).
+	// fileSecretKey is the key loaded from --cache-secret-key-path (nil when
+	// the key is database-managed). pendingSecretKey is set when the file key
+	// differs from the stored key at startup: it is not activated or
+	// persisted until ActivateKeyRotation commits a generation. All four are
+	// guarded by keyRotationMu (secretKey itself is written only from
+	// activation/setup paths under this mutex).
+	keyRotationMu     sync.RWMutex
+	keyRotationState  *keyrotation.State
+	keyRotationRole   keyrotation.Role
+	retiredPublicKeys []signature.PublicKey
+	fileSecretKey     *signature.SecretKey
+	pendingSecretKey  *signature.SecretKey
 
 	// recordAgeIgnoreTouch represents the duration at which a record is
 	// considered up to date and a touch is not invoked. This helps avoid
@@ -4144,6 +4194,13 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
 	if err == nil {
+		// Signing-key rotation gate: augment with the current signature
+		// when the previous generation still verifies unchanged content;
+		// refuse to serve an object nothing can verify.
+		err = c.rotationGateNarInfo(ctx, hash, narInfo)
+	}
+
+	if err == nil {
 		metricAttrs = append(
 			metricAttrs,
 			attribute.String("result", "hit"),
@@ -4177,7 +4234,9 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return narInfo, nil
 	}
 
-	if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, ErrNarInfoPurged) {
+	if !errors.Is(err, storage.ErrNotFound) &&
+		!errors.Is(err, ErrNarInfoPurged) &&
+		!errors.Is(err, ErrNarInfoUnverifiable) {
 		level := errorLogLevelForContextErrors(err)
 
 		zerolog.Ctx(ctx).
@@ -4189,34 +4248,9 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	}
 
 	if c.narInfoStore.HasNarInfo(ctx, hash) {
-		metricAttrs = append(
-			metricAttrs,
-			attribute.String("result", "hit"),
-			attribute.String("status", "success"),
-			attribute.String("source", "storage"),
-		)
-
-		narInfo, err = c.getNarInfoFromStore(ctx, hash)
-		if err == nil {
-			zerolog.Ctx(ctx).
-				Debug().
-				Str("narinfo", narInfo.String()).
-				Msg("fetched this narinfo from the store")
-
-			metricAttrs = append(metricAttrs, attribute.String("status", "success"))
-
-			return narInfo, nil
-		}
-
-		// If narinfo was purged, continue to fetch from upstream
-		if !errors.Is(err, ErrNarInfoPurged) {
-			if retryErr := c.handleStorageFetchError(ctx, hash, err, &narInfo, &metricAttrs); retryErr != nil {
-				return nil, retryErr
-			}
-
-			metricAttrs = append(metricAttrs, attribute.String("status", "success"))
-
-			return narInfo, nil
+		ni, served, serveErr := c.fetchStoredNarInfo(ctx, hash, &metricAttrs)
+		if served {
+			return ni, serveErr
 		}
 	}
 
@@ -4262,6 +4296,10 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 	// After pulling from upstream, get the narinfo from the database (where it's now stored)
 	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
+	if err == nil {
+		err = c.rotationGateNarInfo(ctx, hash, narInfo)
+	}
+
 	if err != nil {
 		// A purge firing on the re-read means the narinfo we just pulled has no
 		// servable backing NAR (the background NAR download failed or was never
@@ -4269,8 +4307,9 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		// internal cache-maintenance signal; it MUST NOT surface to the client as
 		// an HTTP 500. Map it to storage.ErrNotFound so the request resolves to a
 		// 404 and Nix falls back to its next substituter, rather than dead-ending
-		// in a retry-then-fail loop.
-		if errors.Is(err, ErrNarInfoPurged) {
+		// in a retry-then-fail loop. An unverifiable narinfo is unservable by
+		// policy and resolves the same way.
+		if errors.Is(err, ErrNarInfoPurged) || errors.Is(err, ErrNarInfoUnverifiable) {
 			err = storage.ErrNotFound
 		}
 
@@ -7011,19 +7050,56 @@ func (c *Cache) setupSecretKeyFromFile(ctx context.Context, secretKeyPath string
 		return fmt.Errorf("error reading the given secret key located at %q: %w", secretKeyPath, err)
 	}
 
-	c.secretKey, err = signature.LoadSecretKey(string(skc))
+	fileKey, err := signature.LoadSecretKey(string(skc))
 	if err != nil {
 		return fmt.Errorf("error loading the given secret key located at %q: %w", secretKeyPath, err)
 	}
 
 	zerolog.Ctx(ctx).Debug().Str("path", secretKeyPath).Msg("loaded secret key from file")
 
-	// Store it in the database if it doesn't exist or is different
-	// We ignore the error here because we don't want to fail if the DB is down or read-only
-	// The primary source of truth is the file in this case.
+	c.fileSecretKey = &fileKey
+
 	dbKeyStr, err := c.config.GetSecretKey(ctx)
-	if err != nil || dbKeyStr != c.secretKey.String() {
-		if err := c.config.SetSecretKey(ctx, c.secretKey.String()); err != nil {
+	dbHasKey := err == nil
+
+	if err == nil && dbKeyStr != fileKey.String() {
+		// The configured key differs from the stored key: this is either a
+		// signing-key rotation or (once a rotation state exists) a node
+		// joining one. Do NOT overwrite the stored key here — doing so would
+		// lose the previous secret and publish an uncommitted generation.
+		// ActivateKeyRotation (after the sign toggle is configured) decides
+		// whether to begin, join, or reject the change; until then the node
+		// stays active on the stored (previous) key.
+		dbKey, loadErr := signature.LoadSecretKey(dbKeyStr)
+		if loadErr != nil {
+			return fmt.Errorf("error loading the stored secret key for rotation: %w", loadErr)
+		}
+
+		pending := fileKey
+		c.pendingSecretKey = &pending
+		c.secretKey = dbKey
+
+		zerolog.Ctx(ctx).Info().
+			Msg("configured signing key differs from the stored key; rotation deferred to activation")
+
+		return nil
+	} else if err != nil && !errors.Is(err, config.ErrConfigNotFound) && !database.IsNotFoundError(err) {
+		// Unreadable DB: keep the file key active (primary source of truth)
+		// as before, but do not stage a rotation on an unknown stored key.
+		zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to read the secret key from the database")
+
+		c.secretKey = fileKey
+
+		return nil
+	}
+
+	c.secretKey = fileKey
+
+	// First boot (no stored key): persist the file key so the database stays
+	// the source of truth for database-managed nodes. An unchanged stored key
+	// needs no write. Errors are non-fatal here: the file is authoritative.
+	if !dbHasKey {
+		if err := c.config.SetSecretKey(ctx, fileKey.String()); err != nil {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to store the secret key in the database")
 		}
 	}

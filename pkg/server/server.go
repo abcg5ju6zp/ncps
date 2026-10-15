@@ -341,12 +341,24 @@ func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add(contentType, contentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 
+	publicKeys := s.cache.PublicKeys()
+	publicKeyStrings := make([]string, 0, len(publicKeys))
+
+	for _, pk := range publicKeys {
+		publicKeyStrings = append(publicKeyStrings, pk.String())
+	}
+
+	// publicKey stays the current key for backward compatibility;
+	// publicKeys lists every trusted key (current plus the previous
+	// generation during a signing-key rotation).
 	body := struct {
-		Hostname  string `json:"hostname"`
-		Publickey string `json:"publicKey"`
+		Hostname   string   `json:"hostname"`
+		Publickey  string   `json:"publicKey"`
+		PublicKeys []string `json:"publicKeys"`
 	}{
-		Hostname:  s.cache.GetHostname(),
-		Publickey: s.cache.PublicKey().String(),
+		Hostname:   s.cache.GetHostname(),
+		Publickey:  publicKeyStrings[0],
+		PublicKeys: publicKeyStrings,
 	}
 
 	if err := json.NewEncoder(w).Encode(body); err != nil {
@@ -386,7 +398,18 @@ func (s *Server) getNixCachePublicKey(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	if _, err := w.Write([]byte(s.cache.PublicKey().String())); err != nil {
+	// One key per line. With a single trusted key the output is byte
+	// identical to the historical single-key form; during a signing-key
+	// rotation the previous-generation key is published on the next line so
+	// clients accept not-yet-re-signed historical objects.
+	publicKeys := s.cache.PublicKeys()
+	encoded := make([]string, 0, len(publicKeys))
+
+	for _, pk := range publicKeys {
+		encoded = append(encoded, pk.String())
+	}
+
+	if _, err := w.Write([]byte(strings.Join(encoded, "\n"))); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		zerolog.Ctx(r.Context()).

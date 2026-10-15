@@ -1209,6 +1209,14 @@ func createCache(
 
 	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
 
+	// Reconcile the configured signing key with any persisted signing-key
+	// generation: begin or join a rotation now that the sign toggle is
+	// known, before the cache serves traffic. A retired configured key or a
+	// foreign key during an in-progress rotation fails startup here.
+	if err := c.ActivateKeyRotation(ctx); err != nil {
+		return nil, fmt.Errorf("error activating the signing-key rotation: %w", err)
+	}
+
 	cfg := config.New(dbClient, rwLocker)
 
 	// Configure CDC
